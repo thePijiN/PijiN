@@ -10,7 +10,7 @@
 #      /  /:/     \  \:\/:/     \  \:\/:/     \  \:\/:/     \  \:\       /  /:/      |  |:|\/                 /  /:/     \  \:\_\/       |__|::/     \  \:\/:/  
 #     /__/:/       \  \::/       \__\::/       \  \::/       \  \:\     /__/:/       |__|:|~                 /__/:/       \  \:\         /__/:/       \  \::/   
 #     \__\/         \__\/            ~~         \__\/         \__\/     \__\/         \__\|                  \__\/         \__\/         \__\/         \__\/    
-# MODULAR MENU - Powershell 5.1 Utility by Alex DeMey
+# MODULAR MENU - Powershell 5.1 Utility by Ringo
 $ScriptVersion = '0.0.1' 
 
 # region ### Mainmenu Header ###
@@ -84,15 +84,15 @@ function Show-Header {
 
     # --- Agent presence: Label => detect scriptblock ---
     $agentChecks = [ordered]@{
-        Automate    = { DetectLTAgent }
-        Ninja       = { DetectNinjaAgent }
-        CrowdStrike = { DetectCrowdstrike }
-		PIA         = { DetectPiaAgent }
-		Huntress    = { DetectHuntress }
-        Blackpoint  = { DetectBlackpoint }
-        CloudRadial = { DetectCloudRadial }
-        Ninite      = { DetectNinite }
-		ImmyBot     = { DetectImmyAgent }
+        LBTECH = { DetectLTAgent }
+        NINJA1 = { DetectNinjaAgent }
+        CRWDST = { DetectCrowdstrike }
+		CLDRAD = { DetectCloudRadial }
+        NINITE = { DetectNinite }
+		HNTRSS = { DetectHuntress }
+        BLKPNT = { DetectBlackpoint }
+		IMMYBT = { DetectImmyAgent }
+		PIA    = { DetectPiaAgent }
     }
 
     # Evaluate presence, split into two rows of ~5
@@ -181,12 +181,12 @@ function Show-Header {
     Write-Host ''
 
     # Closing separator
-	Write-Host "-------------| " -NoNewLine -ForegroundColor DarkGray
+	Write-Host "------| " -NoNewLine -ForegroundColor DarkGray
 	Write-Host "Version: " -NoNewLine -ForegroundColor Gray
 	Write-Host "$ScriptVersion" -NoNewLine -ForegroundColor Green
 	Write-Host " |" -NoNewLine -ForegroundColor DarkGray
     #Write-Host (' ' * $artWidth) -NoNewLine # Empty space
-    Write-Host "$sep" -ForegroundColor DarkGray
+    Write-Host "-------$sep" -ForegroundColor DarkGray
 }
 #endregion 
 
@@ -578,7 +578,7 @@ function Show-About {
 	Write-Host "v" -NoNewLine -ForegroundColor DarkGray
 	Write-Host "$ScriptVersion" -NoNewLine -ForegroundColor DarkYellow
     Write-Host " - " -NoNewLine -Foregroundcolor DarkGray
-	Write-Host "A Powershell utility by Alex DeMey" -ForegroundColor DarkCyan
+	Write-Host "A Powershell utility by Ringo" -ForegroundColor DarkCyan
     Write-Host "  PowerShell $($PSVersionTable.PSVersion)  |  Host: $env:COMPUTERNAME" -ForegroundColor DarkGray
 	
     Write-Host "  $sep2" -ForegroundColor DarkGray
