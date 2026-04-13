@@ -64,12 +64,12 @@ function Show-Header {
 
     # --- ASCII Art (6 lines) ---
     $art = @(
-        '___  ______  _________  _____ '
-        '|  \/  ||  \/  || ___ \/  ___|'
-        '| .  . || .  . || |_/ /\ `--. '
-        '| |\/| || |\/| ||  __/  `--. \'
-        '| |  | || |  | || |    /\__/ /'
-        '\_|  |_/\_|  |_/\_|    \____/ '
+        '______  ________  ______  ___'
+        '| ___ \/  ___|  \/  ||  \/  |'
+        '| |_/ /\ `--.| .  . || .  . |'
+        '|  __/  `--. \ |\/| || |\/| |'
+        '| |    /\__/ / |  | || |  | |'
+        '\_|    \____/\_|  |_/\_|  |_/'
     )
     $artWidth = ($art | Measure-Object -Property Length -Maximum).Maximum
 
@@ -84,15 +84,16 @@ function Show-Header {
 
     # --- Agent presence: Label => detect scriptblock ---
     $agentChecks = [ordered]@{
-        LBTECH = { DetectLTAgent }
         NINJA1 = { DetectNinjaAgent }
         CRWDST = { DetectCrowdstrike }
 		CLDRAD = { DetectCloudRadial }
         NINITE = { DetectNinite }
+		PIA    = { DetectPiaAgent }
+		LBTECH = { DetectLTAgent }
 		HNTRSS = { DetectHuntress }
         BLKPNT = { DetectBlackpoint }
 		IMMYBT = { DetectImmyAgent }
-		PIA    = { DetectPiaAgent }
+		
     }
 
     # Evaluate presence, split into two rows of ~5
@@ -199,13 +200,13 @@ $script:MenuConfig = @{
 
     Menus = @{
 
-		        Main = @{
+		Main = @{
             Title = 'Main Menu'
             Items = @(
                 @{ Label = 'Separator';     Color = 'DarkYellow'; Desc = '~ Main Menu ~';              Separator = $true }
-                @{ Label = 'Reporting';     Color = 'Yellow';     Desc = '  - Gather information';   Submenu = 'Reporting' }
+                @{ Label = 'Reporting';     Color = 'Yellow';     Desc = '    - Gather information';   Submenu = 'Reporting' }
                 @{ Label = 'Configuration'; Color = 'Yellow';     Desc = '- Change system settings'; Submenu = 'Configuration' }
-                @{ Label = 'Utility';       Color = 'Yellow';     Desc = '     - Tools and cleanup'; Submenu = 'Utility' }
+                @{ Label = 'Utility';       Color = 'Yellow';     Desc = '      - Tools and cleanup'; Submenu = 'Utility' }
                 @{ Label = 'Intune';        Color = 'Yellow';     Desc = '       - Intune tooling';  Submenu = 'Intune' }
                 @{ Label = 'Separator';                                                               Separator = $true }
                 @{ Label = 'About';         Color = 'White';      Desc = 'Info / help';              Action = { Show-About } }
@@ -256,12 +257,14 @@ $script:MenuConfig = @{
                 @{ Label = 'Remove All Printers';            Desc = 'Wipe printers/drivers (spares virtual ones)';   Action = { Reset-PrinterSubsystem } }
                 @{ Label = 'Manage Startup Items';           Desc = 'View/disable reg, folder, and task startups';   Action = { Manage-StartupItems } }
                 @{ Label = 'Separator';                      Color = 'Cyan'; Desc = 'Tools';                                                            Separator = $true }
+				@{ Label = 'PS2EXE Compiler'; 				 Desc = 'Guided ps2exe wrapper'; 						 Action = { Invoke-PS2EXE } }
+				@{ Label = 'Image Resizer'; 				 Desc = 'Supply image, redefine height/width'; 			 Action = { Invoke-ImageResizer } }
                 @{ Label = 'Open Shell as SYSTEM';           Desc = 'Launch PS or CMD via scheduled task';           Action = { Open-AsSystem } }
                 @{ Label = 'Fix WinGet';                     Desc = 'Reset sources, repair, reinstall if needed';    Action = { FixWinGet-New } }
                 @{ Label = 'Scan for Illegal Characters';    Desc = 'Detect/remediate non-ASCII in a script file';   Action = { DetectIllegalCharacters } }
                 @{ Label = 'Separator';                      Color = 'DarkRed'; Desc = 'Upgrades';                                                      Separator = $true }
                 @{ Label = 'Upgrade to Windows 11';          Desc = 'Download and launch Update Assistant';          Action = { Invoke-Windows11Upgrade } }
-                @{ Label = 'Upgrade to Windows 11 (Silent)'; Desc = 'Same, unattended';                             Action = { Invoke-Windows11Upgrade -Silent } }
+                @{ Label = 'Upgrade to Windows 11 (Silent)'; Desc = 'Same, unattended';                              Action = { Invoke-Windows11Upgrade -Silent } }
             )
         }
  
@@ -2182,6 +2185,410 @@ function Reset-NetworkStack {
 
     Write-Host "`n  [+] Network stack reset complete." -ForegroundColor Green
     Pause-Menu
+}
+function Invoke-PS2EXE {
+
+    $cfg = [ordered]@{
+        SourcePath   = $null
+        DestPath     = $null
+        Title        = $null
+        Description  = $null
+        Version      = $null
+        IconFile     = $null
+        RequireAdmin = $false
+        HideConsole  = $false
+        Wait         = $false
+        ThreadModel  = $null
+        NoProfile    = $false
+        NoLogo       = $false
+        NoOutput     = $false
+        NoError      = $false
+        ForceArch    = $null
+        DPIAware     = $true
+    }
+
+    $threadCycle     = @($null, 'STA', 'MTA')
+    $archCycle       = @($null, 'x86', 'x64')
+
+    # Rows defined once at scope level - never inside a function that returns them
+    $script:ps2exeRows = $null
+
+    function CycleValue($current, $list) {
+        $idx = [Array]::IndexOf($list, $current)
+        return $list[($idx + 1) % $list.Count]
+    }
+
+    function ValueDisplay($val, $type) {
+        switch ($type) {
+            'bool'   {
+                if ($val) { return @{ Text = 'Yes'; Color = 'Green'   } }
+                else      { return @{ Text = 'No';  Color = 'Red'     } }
+            }
+            'path'   {
+                if ($val) { return @{ Text = $val;  Color = 'DarkGray' } }
+                else      { return @{ Text = '?';   Color = 'DarkRed'  } }
+            }
+            'string' {
+                if ($val) { return @{ Text = $val;  Color = 'DarkGray' } }
+                else      { return @{ Text = 'No';  Color = 'Red'      } }
+            }
+            'cycle'  {
+                if ($val) { return @{ Text = $val;  Color = 'Cyan'    } }
+                else      { return @{ Text = 'No';  Color = 'Red'     } }
+            }
+        }
+    }
+
+    function Build-Rows {
+        $script:ps2exeRows = [System.Collections.Generic.List[hashtable]]::new()
+        $script:ps2exeRows.Add(@{ Num = 1;    Label = 'Source Path       '; Val = $cfg.SourcePath;   Type = 'path';   Key = 'SourcePath'   })
+        $script:ps2exeRows.Add(@{ Num = 2;    Label = 'Dest Path         '; Val = $cfg.DestPath;     Type = 'path';   Key = 'DestPath'     })
+        $script:ps2exeRows.Add(@{ Num = $null; Sep = $true })
+        $script:ps2exeRows.Add(@{ Num = 3;    Label = 'Title             '; Val = $cfg.Title;        Type = 'string'; Key = 'Title'        })
+        $script:ps2exeRows.Add(@{ Num = 4;    Label = 'Description       '; Val = $cfg.Description;  Type = 'string'; Key = 'Description'  })
+        $script:ps2exeRows.Add(@{ Num = 5;    Label = 'Version           '; Val = $cfg.Version;      Type = 'string'; Key = 'Version'      })
+        $script:ps2exeRows.Add(@{ Num = 6;    Label = 'Icon File         '; Val = $cfg.IconFile;     Type = 'path';   Key = 'IconFile'     })
+        $script:ps2exeRows.Add(@{ Num = $null; Sep = $true })
+        $script:ps2exeRows.Add(@{ Num = 7;    Label = 'Force Architecture'; Val = $cfg.ForceArch;    Type = 'cycle';  Key = 'ForceArch'    })
+        $script:ps2exeRows.Add(@{ Num = 8;   Label = 'Thread Model      '; Val = $cfg.ThreadModel;  Type = 'cycle';  Key = 'ThreadModel'  })
+        $script:ps2exeRows.Add(@{ Num = $null; Sep = $true })
+        $script:ps2exeRows.Add(@{ Num = 9;   Label = 'Require Admin     '; Val = $cfg.RequireAdmin; Type = 'bool';   Key = 'RequireAdmin' })
+        $script:ps2exeRows.Add(@{ Num = 10;   Label = 'Hide Console      '; Val = $cfg.HideConsole;  Type = 'bool';   Key = 'HideConsole'  })
+        $script:ps2exeRows.Add(@{ Num = 11;   Label = 'DPI Aware         '; Val = $cfg.DPIAware;     Type = 'bool';   Key = 'DPIAware'     })
+        $script:ps2exeRows.Add(@{ Num = 12;   Label = 'Wait              '; Val = $cfg.Wait;         Type = 'bool';   Key = 'Wait'         })
+        $script:ps2exeRows.Add(@{ Num = 13;   Label = 'No Profile        '; Val = $cfg.NoProfile;    Type = 'bool';   Key = 'NoProfile'    })
+        $script:ps2exeRows.Add(@{ Num = 14;   Label = 'No Logo           '; Val = $cfg.NoLogo;       Type = 'bool';   Key = 'NoLogo'       })
+        $script:ps2exeRows.Add(@{ Num = 15;   Label = 'No Output         '; Val = $cfg.NoOutput;     Type = 'bool';   Key = 'NoOutput'     })
+        $script:ps2exeRows.Add(@{ Num = 16;   Label = 'No Error          '; Val = $cfg.NoError;      Type = 'bool';   Key = 'NoError'      })
+        $script:ps2exeRows.Add(@{ Num = $null; Sep = $true })
+    }
+
+    function Show-PS2EXEMenu {
+        Clear-Host
+        Write-Host "  PS2EXE Wrapper" -ForegroundColor Cyan
+        Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
+        Write-Host ""
+
+        $ready  = $cfg.SourcePath -and $cfg.DestPath
+        $maxNum = ($script:ps2exeRows | Where-Object { $_.Num } | ForEach-Object { "$($_.Num)".Length } | Measure-Object -Maximum).Maximum
+
+        foreach ($row in $script:ps2exeRows) {
+            if ($row.Sep) {
+                Write-Host "  $('-' * 50)" -ForegroundColor DarkGray
+                continue
+            }
+            $numStr  = "$($row.Num)"
+            $pad     = ' ' * ($maxNum - $numStr.Length)
+            $display = ValueDisplay $row.Val $row.Type
+
+            Write-Host "$pad  [" -NoNewline -ForegroundColor DarkGray
+            Write-Host $numStr -NoNewline -ForegroundColor DarkYellow
+            Write-Host "] " -NoNewline -ForegroundColor DarkGray
+            Write-Host $row.Label -NoNewline -ForegroundColor Gray
+            Write-Host "= " -NoNewline -ForegroundColor DarkGray
+            Write-Host $display.Text -ForegroundColor $display.Color
+        }
+
+        Write-Host "  [" -NoNewline -ForegroundColor DarkGray
+        Write-Host "C" -NoNewline -ForegroundColor $(if ($ready) { 'Green' } else { 'DarkGray' })
+        Write-Host "] " -NoNewline -ForegroundColor DarkGray
+        if ($ready) {
+            Write-Host "CREATE" -ForegroundColor Green
+        } else {
+            Write-Host "CREATE  " -NoNewline -ForegroundColor DarkGray
+            Write-Host "(set Source and Dest first)" -ForegroundColor DarkGray
+        }
+
+        Write-Host ""
+        Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
+        Write-Host "  Press " -NoNewline -ForegroundColor DarkGray
+        Write-Host "[$($script:MenuConfig.Settings.ExitKey)]" -NoNewline -ForegroundColor DarkYellow
+        Write-Host " to cancel." -ForegroundColor DarkGray
+    }
+
+    function Prompt-Value($label, $current) {
+        Write-Host ""
+        Write-Host "  $label" -ForegroundColor Cyan
+        if ($current) {
+            Write-Host "  Current: " -NoNewline -ForegroundColor DarkGray
+            Write-Host $current -ForegroundColor DarkGray
+            Write-Host "  (leave blank to clear)" -ForegroundColor DarkGray
+        }
+        $val = (Read-Host "  >").Trim().Trim('"')
+        if ($val -eq '' -and $current) { return $null }
+        if ($val -eq '')               { return $current }
+        return $val
+    }
+
+    $exitKey = $script:MenuConfig.Settings.ExitKey
+
+    # --- Main loop ---
+    while ($true) {
+        Build-Rows
+        Show-PS2EXEMenu
+        $choice = (Read-Host "`n  ::").Trim()
+
+        if ($choice -ieq $exitKey) { return }
+
+        if ($choice -ieq 'C') {
+            if (-not ($cfg.SourcePath -and $cfg.DestPath)) {
+                Write-Host "`n  Source and Dest paths are required." -ForegroundColor Red
+                Start-Sleep -Milliseconds 800
+                continue
+            }
+
+            # Build argument list as actual array for direct invocation
+            $argList = [System.Collections.Generic.List[string]]::new()
+            $argList.Add($cfg.SourcePath)
+            $argList.Add($cfg.DestPath)
+            if ($cfg.Title)               { $argList.Add('-title');       $argList.Add($cfg.Title)        }
+            if ($cfg.Description)         { $argList.Add('-description'); $argList.Add($cfg.Description)  }
+            if ($cfg.Version)             { $argList.Add('-version');     $argList.Add($cfg.Version)      }
+            if ($cfg.IconFile)            { $argList.Add('-iconFile');    $argList.Add($cfg.IconFile)     }
+            if ($cfg.RequireAdmin)        { $argList.Add('-requireAdmin')                                  }
+            if ($cfg.HideConsole)         { $argList.Add('-noConsole')                                    }
+            if ($cfg.Wait)                { $argList.Add('-wait')                                         }
+            if ($cfg.ThreadModel)         { $argList.Add("-$($cfg.ThreadModel.ToLower())")                }
+            if ($cfg.NoProfile)           { $argList.Add('-noProfile')                                    }
+            if ($cfg.NoLogo)              { $argList.Add('-noLogo')                                       }
+            if ($cfg.NoOutput)            { $argList.Add('-noOutput')                                     }
+            if ($cfg.NoError)             { $argList.Add('-noError')                                      }
+            if ($cfg.DPIAware)            { $argList.Add('-DPIAware')                                    }
+            if ($cfg.ForceArch -eq 'x86') { $argList.Add('-x86')                                        }
+            if ($cfg.ForceArch -eq 'x64') { $argList.Add('-x64')                                        }
+			$argList.Add('-company')
+			$argList.Add('COMPANY')
+			$argList.Add('-product')
+			$argList.Add('COMPANY')
+
+            # Display the reconstructed command for review
+            $previewArgs = $argList | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }
+            Clear-Host
+            Write-Host ""
+            Write-Host "  Command preview:" -ForegroundColor DarkGray
+            Write-Host "  ps2exe $($previewArgs -join ' ')" -ForegroundColor DarkCyan
+            Write-Host ""
+            Write-Host "  Press " -NoNewline -ForegroundColor DarkGray
+            Write-Host "Y" -NoNewline -ForegroundColor Yellow
+            Write-Host " to compile, any other key to go back..." -ForegroundColor DarkGray
+
+            $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+            if ($key.Character -ne 'y' -and $key.Character -ne 'Y') { continue }
+
+            if (-not (Get-Command ps2exe -ErrorAction SilentlyContinue)) {
+                Write-Host "`n  ps2exe not found. Attempting to install from PSGallery..." -ForegroundColor Yellow
+                try {
+                    Install-Module -Name ps2exe -Scope CurrentUser -Force -ErrorAction Stop
+                    Write-Host "  [+] ps2exe installed." -ForegroundColor Green
+                } catch {
+                    Write-Host "  [!] Could not install ps2exe: $_" -ForegroundColor Red
+                    Pause-Menu
+                    continue
+                }
+            }
+
+            Write-Host ""
+            Write-Host "  Running ps2exe..." -ForegroundColor DarkGray
+
+            # Build a scriptblock string with proper quoting, then encode it
+            $sbParts = [System.Collections.Generic.List[string]]::new()
+            $sbParts.Add('& ps2exe')
+            foreach ($arg in $argList) {
+                if ($arg.StartsWith('-')) {
+                    $sbParts.Add($arg)
+                } elseif ($arg -match '\s') {
+                    $escaped = $arg -replace '"', '\"'
+                    $sbParts.Add("`"$escaped`"")
+                } else {
+                    $sbParts.Add($arg)
+                }
+            }
+            $sbString = $sbParts -join ' '
+            $bytes    = [System.Text.Encoding]::Unicode.GetBytes($sbString)
+            $encoded  = [Convert]::ToBase64String($bytes)
+            try {
+                $proc = Start-Process powershell.exe `
+                    -ArgumentList "-NoProfile -ExecutionPolicy Bypass -EncodedCommand $encoded" `
+                    -Wait -PassThru -NoNewWindow
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host "`n  [+] Done. Output: $($cfg.DestPath)" -ForegroundColor Green
+                } else {
+                    Write-Host "`n  [!] ps2exe exited with code $($proc.ExitCode)." -ForegroundColor Red
+                }
+            } catch {
+                Write-Host "`n  [!] Failed to launch: $_" -ForegroundColor Red
+            }
+            Pause-Menu
+            continue
+        }
+
+        $parsed = 0
+        if (-not [int]::TryParse($choice, [ref]$parsed)) {
+            Write-Host "`n  Invalid input." -ForegroundColor Red
+            Start-Sleep -Milliseconds 800
+            continue
+        }
+
+        $row = $script:ps2exeRows | Where-Object { $_.Num -eq $parsed }
+        if (-not $row) {
+            Write-Host "`n  No item with that number." -ForegroundColor Red
+            Start-Sleep -Milliseconds 800
+            continue
+        }
+
+        switch ($row.Type) {
+            'path' {
+                $val = Prompt-Value $row.Label $cfg[$row.Key]
+                if ($val -and -not (Test-Path $val) -and $row.Key -notin @('DestPath','IconFile')) {
+                    Write-Host "  [!] Path not found." -ForegroundColor Red
+                    Start-Sleep -Milliseconds 800
+                } else {
+                    $cfg[$row.Key] = $val
+                }
+            }
+            'string' {$cfg[$row.Key] = Prompt-Value $row.Label $cfg[$row.Key] }
+            'bool'   { $cfg[$row.Key] = -not $cfg[$row.Key] }
+            'cycle'  {
+                $list = switch ($row.Key) {
+                    'ThreadModel' { $threadCycle }
+                    'ForceArch'   { $archCycle }
+                }
+                $cfg[$row.Key] = CycleValue $cfg[$row.Key] $list
+            }
+        }
+    }
+}
+function Invoke-ImageResizer {
+    # Load required assembly for image manipulation
+    Add-Type -AssemblyName System.Drawing
+
+    # --- State ---
+    $cfg = [ordered]@{
+        SourcePath = $null
+        Height     = $null
+        Width      = $null
+    }
+
+    $validExtensions = @('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+
+    function ValueDisplay($val) {
+        if ($val) { return @{ Text = $val; Color = 'DarkGray' } }
+        else      { return @{ Text = '?';   Color = 'DarkRed'  } }
+    }
+
+    function Show-ResizerMenu {
+        Clear-Host
+        Write-Host "  IMAGE RESIZER" -ForegroundColor Cyan
+        Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
+        Write-Host ""
+
+        # Check if all fields are populated
+        $ready = $cfg.SourcePath -and $cfg.Height -and $cfg.Width
+
+        $rows = @(
+            @{ Num = 1; Label = 'Source Path'; Val = $cfg.SourcePath; Key = 'SourcePath' }
+            @{ Num = 2; Label = 'New Height '; Val = $cfg.Height;     Key = 'Height'     }
+            @{ Num = 3; Label = 'New Width  '; Val = $cfg.Width;      Key = 'Width'      }
+        )
+
+        foreach ($row in $rows) {
+            $display = ValueDisplay $row.Val
+            Write-Host "  [$($row.Num)] " -NoNewline -ForegroundColor DarkYellow
+            Write-Host "$($row.Label) = " -NoNewline -ForegroundColor Gray
+            Write-Host $display.Text -ForegroundColor $display.Color
+        }
+
+        Write-Host "  $('-' * 50)" -ForegroundColor DarkGray
+
+        # CREATE option
+        $cColor = if ($ready) { 'Green' } else { 'DarkGray' }
+        Write-Host "  [" -NoNewline -ForegroundColor DarkGray
+        Write-Host "C" -NoNewline -ForegroundColor $cColor
+        Write-Host "] " -NoNewline -ForegroundColor DarkGray
+        Write-Host "CREATE" -ForegroundColor $cColor
+
+        Write-Host ""
+        Write-Host "  $('-' * 52)" -ForegroundColor DarkGray
+        Write-Host "  Press " -NoNewline -ForegroundColor DarkGray
+        Write-Host "[E]" -NoNewline -ForegroundColor DarkYellow
+        Write-Host " to cancel." -ForegroundColor DarkGray
+
+        return $ready
+    }
+
+    # --- Main loop ---
+    while ($true) {
+        $isReady = Show-ResizerMenu
+        $choice = (Read-Host "`n  ::").Trim()
+
+        if ($choice -ieq 'E') { return }
+
+        # CREATE logic
+        if ($choice -ieq 'C') {
+            if (-not $isReady) {
+                Write-Host "  [!] All fields are required." -ForegroundColor Red
+                Start-Sleep -Milliseconds 800
+                continue
+            }
+
+            try {
+                Write-Host "`n  Processing..." -ForegroundColor Cyan
+                $img = [System.Drawing.Image]::FromFile($cfg.SourcePath)
+                $bmp = New-Object System.Drawing.Bitmap([int]$cfg.Width, [int]$cfg.Height)
+                $g = [System.Drawing.Graphics]::FromImage($bmp)
+                
+                $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $g.DrawImage($img, 0, 0, [int]$cfg.Width, [int]$cfg.Height)
+                
+                $ext = [System.IO.Path]::GetExtension($cfg.SourcePath)
+                $base = $cfg.SourcePath.Substring(0, $cfg.SourcePath.Length - $ext.Length)
+                $dest = "${base}_resized${ext}"
+                
+                $bmp.Save($dest)
+                
+                # Cleanup
+                $g.Dispose(); $bmp.Dispose(); $img.Dispose()
+                
+                Write-Host "  [+] Success: $dest" -ForegroundColor Green
+                Pause
+            } catch {
+                Write-Host "  [!] Failed to resize: $_" -ForegroundColor Red
+                Pause
+            }
+            continue
+        }
+
+        # Handle Inputs 1, 2, 3
+        switch ($choice) {
+            '1' {
+                Write-Host "`n  Source Path" -ForegroundColor Cyan
+                if ($cfg.SourcePath) { 
+                    Write-Host "  Current: $($cfg.SourcePath)" -ForegroundColor DarkGray 
+                    Write-Host "  (leave blank to clear)" -ForegroundColor DarkGray
+                }
+                $input = (Read-Host "  >").Trim().Trim('"')
+                
+                if ($input -eq '' -and $cfg.SourcePath) { $cfg.SourcePath = $null }
+                elseif ($input -ne '') {
+                    $ext = [System.IO.Path]::GetExtension($input).ToLower()
+                    if (Test-Path $input -PathType Leaf) {
+                        if ($validExtensions -contains $ext) { $cfg.SourcePath = $input }
+                        else { Write-Host "  [!] Invalid file type ($($validExtensions -join ', '))" -ForegroundColor Red; Start-Sleep 1 }
+                    } else { Write-Host "  [!] File not found." -ForegroundColor Red; Start-Sleep 1 }
+                }
+            }
+            '2' {
+                $val = (Read-Host "`n  Enter Height (px)").Trim()
+                if ($val -match '^\d+$') { $cfg.Height = $val }
+                elseif ($val -eq '') { $cfg.Height = $null }
+            }
+            '3' {
+                $val = (Read-Host "`n  Enter Width (px)").Trim()
+                if ($val -match '^\d+$') { $cfg.Width = $val }
+                elseif ($val -eq '') { $cfg.Width = $null }
+            }
+        }
+    }
 }
 #endregion
 # region == Deployment ==
