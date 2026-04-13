@@ -10,7 +10,7 @@
 #      /  /:/     \  \:\/:/     \  \:\/:/     \  \:\/:/     \  \:\       /  /:/      |  |:|\/                 /  /:/     \  \:\_\/       |__|::/     \  \:\/:/  
 #     /__/:/       \  \::/       \__\::/       \  \::/       \  \:\     /__/:/       |__|:|~                 /__/:/       \  \:\         /__/:/       \  \::/   
 #     \__\/         \__\/            ~~         \__\/         \__\/     \__\/         \__\|                  \__\/         \__\/         \__\/         \__\/    
-# MODULAR MENU - Powershell 5.1 Utility by Ringo
+# MODULAR MENU - Powershell 5.1 Utility by Alex DeMey
 $ScriptVersion = '0.0.1' 
 
 # region ### Mainmenu Header ###
@@ -581,7 +581,7 @@ function Show-About {
 	Write-Host "v" -NoNewLine -ForegroundColor DarkGray
 	Write-Host "$ScriptVersion" -NoNewLine -ForegroundColor DarkYellow
     Write-Host " - " -NoNewLine -Foregroundcolor DarkGray
-	Write-Host "A Powershell utility by Ringo" -ForegroundColor DarkCyan
+	Write-Host "A Powershell utility by Alex DeMey" -ForegroundColor DarkCyan
     Write-Host "  PowerShell $($PSVersionTable.PSVersion)  |  Host: $env:COMPUTERNAME" -ForegroundColor DarkGray
 	
     Write-Host "  $sep2" -ForegroundColor DarkGray
