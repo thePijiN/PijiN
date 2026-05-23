@@ -26,7 +26,7 @@
     restore, switch back and hit Continue.
 #>
 
-Set-StrictMode -Version Latest
+#Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -253,17 +253,17 @@ function Invoke-Restore {
     Write-Host ''
     $scope = (Read-Host '  Choice').Trim()
 
-    $toRestore = switch ($scope) {
+    $toRestore = @(switch ($scope) {
         '1' { $backupFiles }
-        '2' { @($backupFiles | Where-Object { $_.Name -match '^Arena' }) }
-        '3' { @($backupFiles | Where-Object { $_.Name -match '^Exanima' }) }
+        '2' { $backupFiles | Where-Object { $_.Name -match '^Arena' } }
+        '3' { $backupFiles | Where-Object { $_.Name -match '^Exanima' } }
         '0' { return }
         default {
             Write-Host '  Invalid choice.' -ForegroundColor Red
             Pause-Menu
             return
         }
-    }
+    })
 
     if (-not $toRestore -or $toRestore.Count -eq 0) {
         Write-Host '  No matching files in this backup for that scope.' -ForegroundColor Red
