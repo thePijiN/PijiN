@@ -11,7 +11,7 @@
 #     /__/:/       \  \::/       \__\::/       \  \::/       \  \:\     /__/:/       |__|:|~                 /__/:/       \  \:\         /__/:/       \  \::/   
 #     \__\/         \__\/            ~~         \__\/         \__\/     \__\/         \__\|                  \__\/         \__\/         \__\/         \__\/    
 # MODULAR MENU - Powershell 5.1 Utility by Alex DeMey
-$ScriptVersion = '0.0.1' 
+$ScriptVersion = '0.0.2' 
 
 # region ### Mainmenu Header ###
 function DetectLTAgent {return Test-Path "C:\Windows\LTSvC\LTErrors.txt"}
@@ -23,30 +23,71 @@ function DetectNinite { return Test-Path "C:\Program Files (x86)\Ninite Agent\Ni
 function DetectImmyAgent { return Test-Path "C:\Program Files (x86)\ImmyBot\Immybot.Agent.exe" }
 function DetectBlackpoint { return Test-Path "C:\Program Files (x86)\Blackpoint" }
 function DetectHuntress { return Test-Path "C:\Program Files (x86)\Huntress" }
-function GetJoinStatus { # Returns 1 word to indicate the Domain-Join status of the current device: Entra, Local, Hybrid, or None.
+function Initialize-DomainInfo {
+    $script:DomainInfoCached = $false
+    $script:JoinType         = $null
+    $script:DomainName       = $null
+    $script:TenantName       = $null
+
     try {
-        $dsregOutput = dsregcmd /status
-        # Extract the values for AzureAdJoined and DomainJoined
-        $azureAdJoined = ($dsregOutput | Select-String "AzureAdJoined\s*:\s*(\w+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }) -eq 'YES'
-        $domainJoined  = ($dsregOutput | Select-String "DomainJoined\s*:\s*(\w+)" | ForEach-Object { $_.Matches[0].Groups[1].Value }) -eq 'YES'
-        # Determine and display result
-        if ($azureAdJoined -and $domainJoined) {
-            Write-Host "Hybrid" -ForegroundColor Yellow -NoNewLine
+        $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        if (-not $IsAdmin) {
+            $script:JoinType       = 'PermissionError'
+            $script:DomainInfoCached = $true
+            return
         }
-        elseif ($azureAdJoined) {
-            Write-Host "Entra" -ForegroundColor Cyan -NoNewLine
-        }
-        elseif ($domainJoined) {
-            Write-Host "Local" -ForegroundColor Green -NoNewLine
-        }
-        else {
-            Write-Host "None" -ForegroundColor Red -NoNewLine
-        }
+
+        $dsreg          = dsregcmd /status 2>$null
+        $AzureAdJoined  = $dsreg -match "AzureAdJoined\s*:\s*YES"
+        $DomainJoined   = $dsreg -match "DomainJoined\s*:\s*YES"
+
+        $tenantLine     = $dsreg | Where-Object { $_ -match "TenantName\s*:\s*\S" } | Select-Object -First 1
+        $domainLine     = $dsreg | Where-Object { $_ -match "DomainName\s*:\s*\S" } | Select-Object -First 1
+
+        $script:TenantName = if ($tenantLine) { ($tenantLine -replace '.*TenantName\s*:\s*', '').Trim() } else { $null }
+        $script:DomainName = if ($domainLine) { ($domainLine -replace '.*DomainName\s*:\s*', '').Trim()  } else { $null }
+
+        $script:JoinType = if    ($AzureAdJoined -and $DomainJoined) { 'Hybrid' }
+                           elseif ($AzureAdJoined)                    { 'Entra'  }
+                           elseif ($DomainJoined)                     { 'Local'  }
+                           else                                        { 'None'   }
+
+        $script:DomainInfoCached = $true
     } catch {
-        Write-Host "<ERROR>" -ForegroundColor Red -NoNewLine
+        $script:JoinType         = 'Error'
+        $script:DomainInfoCached = $true
     }
 }
-function GetAgentID { # Simplified version of PullAgentID - This just saves the Agent ID value (retrieved from registry) as $global:AgentID
+function GetJoinStatus {
+    if (-not $script:DomainInfoCached) { Initialize-DomainInfo }
+
+    switch ($script:JoinType) {
+        'PermissionError' {
+            Write-Host "<INSUFFICIENT PERMISSIONS>" -ForegroundColor DarkRed -NoNewline
+        }
+        'Hybrid' {
+            Write-Host "Hybrid" -ForegroundColor Yellow -NoNewline
+            if ($script:DomainName -or $script:TenantName) {
+                Write-Host " (" -ForegroundColor DarkGray -NoNewline
+                if ($script:DomainName) { Write-Host $script:DomainName -ForegroundColor Green  -NoNewline }
+                if ($script:DomainName -and $script:TenantName) { Write-Host " / " -ForegroundColor DarkGray -NoNewline }
+                if ($script:TenantName) { Write-Host $script:TenantName -ForegroundColor Cyan   -NoNewline }
+                Write-Host ")" -ForegroundColor DarkGray -NoNewline
+            }
+        }
+        'Entra' {
+            Write-Host "Entra" -ForegroundColor Cyan -NoNewline
+            if ($script:TenantName) { Write-Host " (" -ForegroundColor DarkGray -NoNewline ; Write-Host $script:TenantName -ForegroundColor Cyan -NoNewline ; Write-Host ")" -ForegroundColor DarkGray -NoNewline }
+        }
+        'Local' {
+            Write-Host "Local" -ForegroundColor Green -NoNewline
+            if ($script:DomainName) { Write-Host " (" -ForegroundColor DarkGray -NoNewline ; Write-Host $script:DomainName -ForegroundColor Green -NoNewline ; Write-Host ")" -ForegroundColor DarkGray -NoNewline }
+        }
+        'None'  { Write-Host "None"    -ForegroundColor Red -NoNewline }
+        'Error' { Write-Host "<ERROR>" -ForegroundColor Red -NoNewline }
+    }
+}
+function GetLTAgentID { # Simplified version of PullAgentID - This just saves the Agent ID value (retrieved from registry) as $global:AgentID
     $global:AgentID = "N/A"
     try {
         $agentID = Get-ItemProperty -Path "HKLM:\SOFTWARE\LabTech\Service" -Name "ID" -ErrorAction Stop
@@ -62,17 +103,15 @@ function Show-Header {
     $settings = $cfg.Settings
     $sep      = $settings.SeparatorChar * $settings.SeparatorWidth
 
-    # --- ASCII Art (6 lines) ---
-    $art = @(
-        '______  ________  ______  ___'
-        '| ___ \/  ___|  \/  ||  \/  |'
-        '| |_/ /\ `--.| .  . || .  . |'
-        '|  __/  `--. \ |\/| || |\/| |'
-        '| |    /\__/ / |  | || |  | |'
-        '\_|    \____/\_|  |_/\_|  |_/'
-    )
-    $artWidth = ($art | Measure-Object -Property Length -Maximum).Maximum
-
+    # --- ASCII Art (6 lines) ---        
+	$art = @( # Standard Art
+		'__   _____________________  ___ ____ _   _ _   _ '
+		'\ \ / /| ___ \ __| ___ \  \/  ||  __| \ | | | | |'
+		' \ V / | |_/ /|_ | |_/ / .  . || |_ |  \| | | | |'
+		' /   \ |  __/  _||    /| |\/| ||  _|| . ` | | | |'
+		'/ /^\ \| |  | |__| |\ \| |  | || |__| |\  | |_| |'
+		'\/   \/\_|  \___/\_| \_\_|  |_/\___/\_| \_/\___/ '
+	)
     # --- Collect data ---
     $hostname = $env:COMPUTERNAME
 
@@ -80,7 +119,7 @@ function Show-Header {
         (Get-CimInstance Win32_BIOS).SerialNumber.Trim()
     } catch { 'N/A' }
 
-    GetAgentID  # populates $global:AgentID
+    GetLTAgentID  # populates $global:AgentID
 
     # --- Agent presence: Label => detect scriptblock ---
     $agentChecks = [ordered]@{
@@ -89,11 +128,10 @@ function Show-Header {
 		CLDRAD = { DetectCloudRadial }
         NINITE = { DetectNinite }
 		PIA    = { DetectPiaAgent }
-		LBTECH = { DetectLTAgent }
 		HNTRSS = { DetectHuntress }
         BLKPNT = { DetectBlackpoint }
 		IMMYBT = { DetectImmyAgent }
-		
+		LBTECH = { DetectLTAgent }
     }
 
     # Evaluate presence, split into two rows of ~5
@@ -158,16 +196,24 @@ function Show-Header {
     Write-Host ' Ran As: ' -NoNewLine -ForegroundColor DarkGray
     Write-Host $currentUserDomain -NoNewLine -ForegroundColor Blue
     Write-Host '\' -NoNewLine -ForegroundColor DarkGray
-    Write-Host $currentUser -NoNewLine -ForegroundColor $userColor
+    Write-Host $currentUser -ForegroundColor $userColor #-NoNewLine
+	<# LT ID
     Write-Host $ltLabel -NoNewLine -ForegroundColor DarkGray
-    Write-Host $ltVal             -ForegroundColor $ltColor
+    Write-Host $ltVal             -ForegroundColor $ltColor 
+	#>
 
-    # Line 4 - art line 4 + Agents row 1
+	# Line 4 - art line 4 + Agents row 1
     Write-Host ($art[4].PadRight($artWidth)) -NoNewLine -ForegroundColor DarkCyan
     Write-Host ' Agents: ' -NoNewLine -ForegroundColor DarkGray
     foreach ($name in $row1agents) {
         $color = if ($agentResults[$name]) { 'Green' } else { 'DarkGray' }
-        Write-Host "$name " -NoNewLine -ForegroundColor $color
+        if ($name -eq 'LBTECH' -and $agentResults[$name] -and $global:AgentID -ne 'N/A') {
+            Write-Host $name       -NoNewLine -ForegroundColor Green
+            Write-Host ':'         -NoNewLine -ForegroundColor DarkGray
+            Write-Host "$global:AgentID " -NoNewLine -ForegroundColor Red
+        } else {
+            Write-Host "$name " -NoNewLine -ForegroundColor $color
+        }
     }
     Write-Host ''
 
@@ -177,17 +223,23 @@ function Show-Header {
     Write-Host $agentIndent -NoNewLine
     foreach ($name in $row2agents) {
         $color = if ($agentResults[$name]) { 'Green' } else { 'DarkGray' }
-        Write-Host "$name " -NoNewLine -ForegroundColor $color
+        if ($name -eq 'LBTECH' -and $agentResults[$name] -and $global:AgentID -ne 'N/A') {
+            Write-Host $name       -NoNewLine -ForegroundColor Green
+            Write-Host ':'         -NoNewLine -ForegroundColor DarkGray
+            Write-Host "$global:AgentID " -NoNewLine -ForegroundColor Red
+        } else {
+            Write-Host "$name " -NoNewLine -ForegroundColor $color
+        }
     }
     Write-Host ''
 
     # Closing separator
-	Write-Host "------| " -NoNewLine -ForegroundColor DarkGray
+	Write-Host "--------------------------------| " -NoNewLine -ForegroundColor DarkGray
 	Write-Host "Version: " -NoNewLine -ForegroundColor Gray
 	Write-Host "$ScriptVersion" -NoNewLine -ForegroundColor Green
 	Write-Host " |" -NoNewLine -ForegroundColor DarkGray
     #Write-Host (' ' * $artWidth) -NoNewLine # Empty space
-    Write-Host "-------$sep" -ForegroundColor DarkGray
+    Write-Host "$sep" -ForegroundColor DarkGray
 }
 #endregion 
 
@@ -1290,34 +1342,56 @@ Get-Process "winlogon" | stop-process -Force
 	Start-Process powershell.exe -ArgumentList "-encodedCommand $encodedCommand" -Verb runas -Wait
 	Write-Host "Ninite has been installed."
 }
-function Set-PowerPlan { 
+function Set-PowerPlan {
+
+    function Invoke-PowerCfg {
+        param (
+            [string]$Arguments
+        )
+
+        cmd /c "powercfg $Arguments" *> $null
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "powercfg failed: $Arguments"
+        }
+    }
+
     Clear-Host
+
     Write-Host "`n  Power Plan" -ForegroundColor Cyan
-    Write-Host "  $('-' * 40)" -ForegroundColor DarkGray
+    Write-Host "  $('-' * 50)" -ForegroundColor DarkGray
+
     Write-Host "  [1] " -NoNewLine -ForegroundColor DarkGray
     Write-Host "Always On" -NoNewLine -ForegroundColor White
-    Write-Host "         Never sleep, no screen timeout" -ForegroundColor DarkGray
+    Write-Host "         No sleep, no display timeout, no lock" -ForegroundColor DarkGray
+
     Write-Host "  [2] " -NoNewLine -ForegroundColor DarkGray
-    Write-Host "XperUtility" -NoNewLine -ForegroundColor Cyan
-    Write-Host "       Never sleep, screen locks after 5 min" -ForegroundColor DarkGray
-    Write-Host "  [3] " -NoNewLine -ForegroundColor DarkGray
     Write-Host "Custom" -NoNewLine -ForegroundColor White
-    Write-Host "            Never sleep, custom screen timeout" -ForegroundColor DarkGray
-    Write-Host "  $('-' * 40)" -ForegroundColor DarkGray
+    Write-Host "            No sleep, custom display + lock timeout" -ForegroundColor DarkGray
+
+    Write-Host "  $('-' * 50)" -ForegroundColor DarkGray
 
     $choice = (Read-Host "`n  Select").Trim()
 
-    $screenTimeout = switch ($choice) {
-        '1' { 0    }
-        '2' { 300  }
-        '3' {
-            $mins = Read-Host "  Screen lock timeout (minutes)"
-            if ($mins -match '^\d+$') { [int]$mins * 60 } else {
-                Write-Host "  Invalid input." -ForegroundColor Red
-                Start-Sleep -Milliseconds 800
+    switch ($choice) {
+
+        '1' {
+            $timeoutMins = 0
+        }
+
+        '2' {
+
+            $inputValue = Read-Host "  Timeout (minutes)"
+
+            if ($inputValue -notmatch '^\d+$') {
+                Write-Host "`n  Invalid input." -ForegroundColor Red
+                Start-Sleep -Milliseconds 1200
                 return
             }
+
+            $timeoutMins = [int]$inputValue
         }
+
         default {
             Write-Host "`n  Cancelled." -ForegroundColor DarkGray
             Start-Sleep -Milliseconds 800
@@ -1326,34 +1400,48 @@ function Set-PowerPlan {
     }
 
     try {
-        # Set High Performance base
-        powercfg /setactive SCHEME_MIN 2>$null
 
-        # AC (plugged in) - never sleep, never hibernate
-        powercfg /change standby-timeout-ac 0
-        powercfg /change hibernate-timeout-ac 0
-        powercfg /change disk-timeout-ac 0
+        # High Performance
+        Invoke-PowerCfg "/setactive SCHEME_MAX"
 
-        # DC (battery) - never sleep, never hibernate
-        powercfg /change standby-timeout-dc 0
-        powercfg /change hibernate-timeout-dc 0
-        powercfg /change disk-timeout-dc 0
+        # Disable sleep / hibernate
+        Invoke-PowerCfg "/change standby-timeout-ac 0"
+        Invoke-PowerCfg "/change standby-timeout-dc 0"
 
-        # Screen timeout (0 = never)
-        $screenMins = [math]::Ceiling($screenTimeout / 60)
-        powercfg /change monitor-timeout-ac $screenMins
-        powercfg /change monitor-timeout-dc $screenMins
+        Invoke-PowerCfg "/change hibernate-timeout-ac 0"
+        Invoke-PowerCfg "/change hibernate-timeout-dc 0"
 
-        $label = switch ($choice) {
-            '1' { 'Always On (no sleep, no screen timeout)' }
-            '2' { 'XperUtility (no sleep, 5 min screen lock)' }
-            '3' { "Custom (no sleep, $screenMins min screen timeout)" }
+        # Disable disk timeout
+        Invoke-PowerCfg "/change disk-timeout-ac 0"
+        Invoke-PowerCfg "/change disk-timeout-dc 0"
+
+        # Display timeout
+        Invoke-PowerCfg "/change monitor-timeout-ac $timeoutMins"
+        Invoke-PowerCfg "/change monitor-timeout-dc $timeoutMins"
+
+        # Console lock display timeout
+        # (helps prevent automatic lock behavior tied to display timeout)
+        Invoke-PowerCfg "/setacvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOCONLOCK $timeoutMins"
+        Invoke-PowerCfg "/setdcvalueindex SCHEME_CURRENT SUB_VIDEO VIDEOCONLOCK $timeoutMins"
+
+        # Re-apply scheme so advanced settings commit
+        Invoke-PowerCfg "/setactive SCHEME_CURRENT"
+
+        $label = if ($timeoutMins -eq 0) {
+            "Always On"
         }
+        else {
+            "Custom ($timeoutMins minute timeout)"
+        }
+
         Write-Host "`n  [+] Power plan applied: " -NoNewLine -ForegroundColor Green
         Write-Host $label -ForegroundColor Cyan
-    } catch {
-        Write-Host "`n  [!] Failed: $_" -ForegroundColor Red
+
     }
+    catch {
+        Write-Host "`n  [!] $_" -ForegroundColor Red
+    }
+
     Start-Sleep -Seconds 2
 }
 function Set-TimezoneMenu {
@@ -2912,3 +3000,4 @@ Show-Menu -MenuKey $script:MenuConfig.Settings.RootMenu
 
 # CHANGELOG
 # 0.0.1 - 04/12/2026 - Release
+# 0.0.2 - 05/24/2026 - Improved Header formatting, improved Set-PowerPlan function
