@@ -10,7 +10,7 @@
 #      /  /:/     \  \:\/:/     \  \:\/:/     \  \:\/:/     \  \:\       /  /:/      |  |:|\/                 /  /:/     \  \:\_\/       |__|::/     \  \:\/:/  
 #     /__/:/       \  \::/       \__\::/       \  \::/       \  \:\     /__/:/       |__|:|~                 /__/:/       \  \:\         /__/:/       \  \::/   
 #     \__\/         \__\/            ~~         \__\/         \__\/     \__\/         \__\|                  \__\/         \__\/         \__\/         \__\/    
-# MODULAR MENU - Powershell 5.1 Utility by Alex DeMey
+# MODULAR MENU - Powershell 5.1 Utility by PijiN
 $ScriptVersion = '0.0.2' 
 
 # region ### Mainmenu Header ###
