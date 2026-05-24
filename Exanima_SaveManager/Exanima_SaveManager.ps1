@@ -58,9 +58,13 @@ function Write-Header {
 }
 
 function Write-ClosedWarning {
-    Write-Host '  [!] Exanima must be CLOSED (or at Main Menu) before' -ForegroundColor Yellow
-    Write-Host '      touching saves. The game only writes .rsg on exit.' -ForegroundColor DarkYellow
-    Write-Host ''
+    $running = [bool](Get-Process -Name 'Exanima' -ErrorAction SilentlyContinue)
+    if ($running) {
+        Write-Host '  [!] Exanima must be CLOSED (or at Main Menu) before touching saves!' -ForegroundColor Red
+        Write-Host '      The game only writes .rsg on exit. ' -NoNewline -ForegroundColor DarkRed
+        Write-Host 'The game DELETES the active .rsg on death.' -BackgroundColor DarkRed -ForegroundColor Black
+        Write-Host ''
+    }
 }
 
 function Pause-Menu {
@@ -162,9 +166,9 @@ function Invoke-Backup {
         $kb   = [math]::Round($f.Length / 1KB, 1)
         $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
         $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [{0,2}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
+        Write-Host ('  [{0}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
     }
-    Write-Host '  [  0]  Cancel' -ForegroundColor DarkGray
+    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
     Write-Host ''
 
     $raw = Read-Host '  Select'
@@ -217,11 +221,11 @@ function Invoke-Restore {
         $b     = $backups[$i]
         $files = @(Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue)
         $names = ($files | ForEach-Object { $_.Name }) -join '  '
-        Write-Host ('  [{0,2}]  {1}' -f ($i + 1), $b.Name) -ForegroundColor Yellow
+        Write-Host ('  [{0}]  {1}' -f ($i + 1), $b.Name) -ForegroundColor Yellow
         Write-Host ('         {0}'   -f $names)              -ForegroundColor DarkGray
         Write-Host ''
     }
-    Write-Host '  [  0]  Cancel' -ForegroundColor DarkGray
+    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
     Write-Host ''
 
     $raw = Read-Host '  Select backup number'
@@ -333,9 +337,9 @@ function Invoke-MakeCheckpoint {
         $kb   = [math]::Round($f.Length / 1KB, 1)
         $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
         $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [{0,2}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
+        Write-Host ('  [{0}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
     }
-    Write-Host '  [  0]  Cancel' -ForegroundColor DarkGray
+    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
     Write-Host ''
 
     $raw = Read-Host '  Select'
@@ -400,9 +404,9 @@ function Invoke-DeleteBackup {
     Write-Host ''
     for ($i = 0; $i -lt $all.Count; $i++) {
         $tag = if ($all[$i].Name -match '^PRE-RESTORE_') { '[auto]  ' } else { '        ' }
-        Write-Host ('  [{0,2}]  {1}{2}' -f ($i + 1), $tag, $all[$i].Name) -ForegroundColor Yellow
+        Write-Host ('  [{0}]  {1}{2}' -f ($i + 1), $tag, $all[$i].Name) -ForegroundColor Yellow
     }
-    Write-Host '  [  0]  Cancel' -ForegroundColor DarkGray
+    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
     Write-Host ''
 
     $raw = Read-Host '  Select'
