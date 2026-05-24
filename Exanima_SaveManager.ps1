@@ -26,7 +26,7 @@
     restore, switch back and hit Continue.
 #>
 
-#Set-StrictMode -Version Latest
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------------------
@@ -215,7 +215,7 @@ function Invoke-Restore {
     Write-Host ''
     for ($i = 0; $i -lt $backups.Count; $i++) {
         $b     = $backups[$i]
-        $files = Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue
+        $files = @(Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue)
         $names = ($files | ForEach-Object { $_.Name }) -join '  '
         Write-Host ('  [{0,2}]  {1}' -f ($i + 1), $b.Name) -ForegroundColor Yellow
         Write-Host ('         {0}'   -f $names)              -ForegroundColor DarkGray
@@ -235,47 +235,30 @@ function Invoke-Restore {
     }
 
     $selected    = $backups[$idx - 1]
-    $backupFiles = @(Get-ChildItem -Path $selected.FullName -ErrorAction SilentlyContinue)
+    $toRestore   = @(Get-ChildItem -Path $selected.FullName -ErrorAction SilentlyContinue)
 
-    Write-Host ''
-    Write-Host "  Selected : $($selected.Name)" -ForegroundColor Cyan
-    Write-Host '  Contents :' -ForegroundColor White
-    foreach ($f in $backupFiles) {
-        Write-Host "    $($f.Name)  [Saved Game]" -ForegroundColor Gray
-    }
-    Write-Host ''
-
-    Write-Host '  Restore scope:' -ForegroundColor White
-    Write-Host '  [1]  All saves from this backup'  -ForegroundColor White
-    Write-Host '  [2]  Arena saves only'             -ForegroundColor White
-    Write-Host '  [3]  Dungeon saves only'           -ForegroundColor White
-    Write-Host '  [0]  Cancel'                       -ForegroundColor DarkGray
-    Write-Host ''
-    $scope = (Read-Host '  Choice').Trim()
-
-    $toRestore = @(switch ($scope) {
-        '1' { $backupFiles }
-        '2' { $backupFiles | Where-Object { $_.Name -match '^Arena' } }
-        '3' { $backupFiles | Where-Object { $_.Name -match '^Exanima' } }
-        '0' { return }
-        default {
-            Write-Host '  Invalid choice.' -ForegroundColor Red
-            Pause-Menu
-            return
-        }
-    })
-
-    if (-not $toRestore -or $toRestore.Count -eq 0) {
-        Write-Host '  No matching files in this backup for that scope.' -ForegroundColor Red
+    if ($toRestore.Count -eq 0) {
+        Write-Host '  Backup folder is empty. Nothing to restore.' -ForegroundColor Red
         Pause-Menu
         return
     }
 
     Write-Host ''
-    Write-Host '  Files that will be OVERWRITTEN in your save directory:' -ForegroundColor Yellow
-    foreach ($f in $toRestore) { Write-Host "    $($f.Name)" -ForegroundColor Gray }
+    Write-Host "  Selected : $($selected.Name)" -ForegroundColor Cyan
     Write-Host ''
-    Write-Host '  Confirm restore? (Y / N)' -ForegroundColor Yellow
+
+    # Show what will happen to each file - exist = overwrite, missing = restore fresh
+    foreach ($f in $toRestore) {
+        $destPath = Join-Path $SaveDir $f.Name
+        if (Test-Path $destPath) {
+            Write-Host "  [OVERWRITE]  $($f.Name)" -ForegroundColor Yellow
+        } else {
+            Write-Host "  [RESTORE]    $($f.Name)  (not currently in save dir)" -ForegroundColor Cyan
+        }
+    }
+
+    Write-Host ''
+    Write-Host '  Confirm? (Y / N)' -ForegroundColor White
     $confirm = (Read-Host '  ').Trim()
     if ($confirm -notmatch '^[Yy]') {
         Write-Host '  Restore cancelled.' -ForegroundColor DarkGray
@@ -283,7 +266,7 @@ function Invoke-Restore {
         return
     }
 
-    # Auto safety-backup of current .rsg saves before overwriting
+    # Safety backup of any .rsg files currently in save dir before overwriting
     $current = @(Get-CurrentSaves)
     if ($current.Count -gt 0) {
         $safeDir = Join-Path $BackupRoot ("PRE-RESTORE_{0}" -f (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
@@ -296,18 +279,35 @@ function Invoke-Restore {
         Write-Host "  $safeDir"                                -ForegroundColor DarkGray
     }
 
+    # Restore
     Write-Host ''
+    $anyFailed = $false
     foreach ($f in $toRestore) {
-        $target = Join-Path $SaveDir $f.Name
-        Copy-Item -Path $f.FullName -Destination $target -Force
-        Write-Host "  Restored  : $($f.Name)  [Saved Game]" -ForegroundColor Green
+        $destPath = Join-Path $SaveDir $f.Name
+        try {
+            Copy-Item -Path $f.FullName -Destination $destPath -Force
+            if (Test-Path $destPath) {
+                Write-Host "  OK  $($f.Name)  -->  $destPath" -ForegroundColor Green
+            } else {
+                Write-Host "  FAILED (no error thrown but file missing): $($f.Name)" -ForegroundColor Red
+                $anyFailed = $true
+            }
+        } catch {
+            Write-Host "  FAILED  $($f.Name) : $_" -ForegroundColor Red
+            $anyFailed = $true
+        }
     }
 
     Write-Host ''
-    Write-Host '  Restore complete.' -ForegroundColor Green
-    Write-Host '  Switch back to Exanima and hit Continue (or launch the game).' -ForegroundColor Cyan
+    if ($anyFailed) {
+        Write-Host '  One or more files failed to restore. See errors above.' -ForegroundColor Red
+    } else {
+        Write-Host '  Restore complete.' -ForegroundColor Green
+        Write-Host '  Launch Exanima and hit Continue (or switch back if at main menu).' -ForegroundColor Cyan
+    }
     Pause-Menu
 }
+
 
 # ---------------------------------------------------------------------------
 # MAKE SAVE INTO CHECKPOINT
