@@ -1,6 +1,6 @@
-# MACHINE_INFO.ps1 - by Alexander DeMey - Displays information about the current Windows configuration
+# MACHINE_INFO.ps1 - Displays information about the current Windows configuration
 
-# Copyright (c) 2025 Alexander DeMey
+# Copyright (c) 2025 PijiN
 # All rights reserved.
 # This script is provided under a personal, non-transferable license.
 # The author reserves the right to revoke, restrict, or deny usage, reproduction, or distribution
