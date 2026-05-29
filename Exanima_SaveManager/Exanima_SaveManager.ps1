@@ -1,84 +1,39 @@
 ﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Exanima Save Manager - Backup and restore Exanima save files.
-
-.DESCRIPTION
-    Manages Arena and Dungeon save files located in %APPDATA%\Exanima.
-    Supports named backups, selective Arena/Dungeon restore, and
-    auto-safety-backup before any restore to prevent accidental loss.
-
-    File types:
-        Arena*.rsg    - Arena saved game state      [backed up]
-        Exanima*.rsg  - Dungeon saved game state    [backed up]
-        Arena*.rcp    - Arena checkpoint            [listed only, not backed up]
-        Exanima*.rcp  - Dungeon checkpoint          [listed only, not backed up]
-
-    Naming convention (enforced by the game):
-        Files MUST follow the Arena### / Exanima### + extension pattern.
-        The game uses the filename to identify save slots.
-        Arbitrary names like "MyRun.rsg" will be ignored by the game.
-
+    Exanima Save Manager - WinForms GUI
 .NOTES
-    Always quit Exanima to the desktop BEFORE backing up.
-    The game only flushes .rsg saves to disk on exit.
-    For restores you can be at the main menu, then alt-tab here,
-    restore, switch back and hit Continue.
+    Save file naming (enforced by Exanima):
+        Arena###.rsg / Arena###.rcp
+        Exanima###.rsg / Exanima###.rcp
+    Backup folder naming:
+        [Arena_]yyyy-MM-dd_HH-mm-ss[_Label]
+        Reload_yyyy-MM-dd_HH-mm-ss
+    Backup type is determined by the files inside the folder,
+    not the folder name, so old backups without the Arena_ prefix
+    are still correctly identified.
 #>
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
 # ---------------------------------------------------------------------------
-# Paths
+# Paths & patterns
 # ---------------------------------------------------------------------------
 $SaveDir    = Join-Path $env:APPDATA 'Exanima'
 $BackupRoot = Join-Path $SaveDir 'SaveManager'
 
-# Only .rsg files are backed up/restored - they are the saved game states.
-# .rcp are checkpoints: same data format, but the game manages them separately.
-# They do not expire and are not something we need to back up.
-$SavePatterns       = 'Arena*.rsg', 'Exanima*.rsg'
-$CheckpointPatterns = 'Arena*.rcp', 'Exanima*.rcp'
+$SavePatterns = 'Arena*.rsg', 'Exanima*.rsg'
+$CkptPatterns = 'Arena*.rcp', 'Exanima*.rcp'
 
 # ---------------------------------------------------------------------------
-# Console helpers
-# ---------------------------------------------------------------------------
-function Write-Header {
-    Clear-Host
-    $border = '=' * 64
-
-    Write-Host $border                              -ForegroundColor Cyan
-    Write-Host '  EXANIMA SAVE MANAGER'  -ForegroundColor Cyan
-    Write-Host $border                              -ForegroundColor Cyan
-    Write-Host ''
-    Write-Host "  Save dir   : $SaveDir"    -ForegroundColor DarkGray
-    Write-Host "  Backup dir : $BackupRoot" -ForegroundColor DarkGray
-    Write-Host ''
-}
-
-function Write-ClosedWarning {
-    $running = [bool](Get-Process -Name 'Exanima' -ErrorAction SilentlyContinue)
-    if ($running) {
-        Write-Host '  [!] Exanima must be CLOSED (or at Main Menu) before touching saves!' -ForegroundColor Red
-        Write-Host '      The game only writes .rsg on exit. ' -NoNewline -ForegroundColor DarkRed
-        Write-Host 'The game DELETES the active .rsg on death.' -BackgroundColor DarkRed -ForegroundColor Black
-        Write-Host ''
-    }
-}
-
-function Pause-Menu {
-    Write-Host ''
-    Read-Host '  Press Enter to return to the menu'
-}
-
-# ---------------------------------------------------------------------------
-# Save / checkpoint discovery
+# Data helpers
 # ---------------------------------------------------------------------------
 function Get-CurrentSaves {
     $found = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-    foreach ($pat in $SavePatterns) {
-        Get-ChildItem -Path $SaveDir -Filter $pat -ErrorAction SilentlyContinue |
+    foreach ($pat in $script:SavePatterns) {
+        Get-ChildItem -Path $script:SaveDir -Filter $pat -ErrorAction SilentlyContinue |
             ForEach-Object { $found.Add($_) }
     }
     return @($found | Sort-Object Name)
@@ -86,441 +41,667 @@ function Get-CurrentSaves {
 
 function Get-CurrentCheckpoints {
     $found = [System.Collections.Generic.List[System.IO.FileInfo]]::new()
-    foreach ($pat in $CheckpointPatterns) {
-        Get-ChildItem -Path $SaveDir -Filter $pat -ErrorAction SilentlyContinue |
+    foreach ($pat in $script:CkptPatterns) {
+        Get-ChildItem -Path $script:SaveDir -Filter $pat -ErrorAction SilentlyContinue |
             ForEach-Object { $found.Add($_) }
     }
     return @($found | Sort-Object Name)
 }
 
 function Get-Backups {
-    if (-not (Test-Path $BackupRoot)) { return @() }
-    return @(Get-ChildItem -Path $BackupRoot -Directory |
-        Where-Object { $_.Name -notmatch '^PRE-RESTORE_' } |
+    if (-not (Test-Path $script:BackupRoot)) { return @() }
+    return @(Get-ChildItem -Path $script:BackupRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch '^Reload_' } |
         Sort-Object Name -Descending)
 }
 
-function Get-SafetyBackups {
-    if (-not (Test-Path $BackupRoot)) { return @() }
-    return @(Get-ChildItem -Path $BackupRoot -Directory |
-        Where-Object { $_.Name -match '^PRE-RESTORE_' } |
-        Sort-Object Name -Descending)
+function Get-ReloadBackups {
+    if (-not (Test-Path $script:BackupRoot)) { return @() }
+    return @(Get-ChildItem -Path $script:BackupRoot -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^Reload_' })
+}
+
+# Type is determined by the files inside the backup folder, not the folder name,
+# so backups created before the Arena_ prefix convention are still handled correctly.
+function Get-BackupType([System.IO.DirectoryInfo]$dir) {
+    $files      = @(Get-ChildItem $dir.FullName -ErrorAction SilentlyContinue)
+    $hasArena   = [bool]($files | Where-Object { $_.Name -match '^Arena' })
+    $hasDungeon = [bool]($files | Where-Object { $_.Name -match '^Exanima' })
+    if ($hasArena -and $hasDungeon) { return 'Mixed'   }
+    if ($hasArena)                  { return 'Arena'   }
+    return 'Dungeon'
+}
+
+function Parse-BackupDate([string]$dirName) {
+    # Strip known prefixes then extract the timestamp portion
+    $rest = $dirName -replace '^(Arena_|Reload_)', ''
+    if ($rest -match '^(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-(\d{2})') {
+        return "$($Matches[1])  $($Matches[2]):$($Matches[3]):$($Matches[4])"
+    }
+    return ''
+}
+
+function Parse-BackupLabel([string]$dirName) {
+    $rest = $dirName -replace '^(Arena_|Reload_)', ''
+    if ($rest -match '^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}_(.+)$') {
+        return $Matches[1]
+    }
+    return ''
 }
 
 # ---------------------------------------------------------------------------
-# Display current saves and checkpoints (shown on main menu)
+# Colors
 # ---------------------------------------------------------------------------
-function Show-CurrentSaves {
-    $saves  = @(Get-CurrentSaves)
-    $ckpts  = @(Get-CurrentCheckpoints)
-    $any    = ($saves.Count + $ckpts.Count) -gt 0
+$clrBg        = [System.Drawing.Color]::FromArgb(  0,   0,   0)
+$clrPanel     = [System.Drawing.Color]::FromArgb( 20,  20,  20)
+$clrPanelAlt  = [System.Drawing.Color]::FromArgb( 30,  30,  30)  # alternating row
+$clrInput     = [System.Drawing.Color]::FromArgb( 46,  46,  50)
+$clrBorder    = [System.Drawing.Color]::FromArgb( 64,  64,  68)
+$clrAccent    = [System.Drawing.Color]::FromArgb(212, 118,  42)
+$clrAccentHi  = [System.Drawing.Color]::FromArgb(238, 148,  64)
+$clrAccentDim = [System.Drawing.Color]::FromArgb( 88,  42,  18)
+$clrText      = [System.Drawing.Color]::FromArgb(222, 222, 222)
+$clrDim       = [System.Drawing.Color]::FromArgb(112, 112, 112)
+$clrArena     = [System.Drawing.Color]::FromArgb(224, 138,  58)
+$clrGreen     = [System.Drawing.Color]::FromArgb( 88, 196, 108)
+$clrRed       = [System.Drawing.Color]::FromArgb(220,  78,  62)
+$clrRedDim    = [System.Drawing.Color]::FromArgb( 92,  34,  24)
+$clrWarnBg    = [System.Drawing.Color]::FromArgb(118,  20,  14)
+$clrWarnText  = [System.Drawing.Color]::FromArgb(255, 214, 205)
+$clrFire      = [System.Drawing.Color]::FromArgb(255, 210,  50)  # checkpoint active text
 
-    if (-not $any) {
-        Write-Host '  No save files detected in save directory.' -ForegroundColor DarkGray
-        Write-Host ''
-        return
+$fntUI   = New-Object System.Drawing.Font('Segoe UI',  9)
+$fntBold = New-Object System.Drawing.Font('Segoe UI',  9, [System.Drawing.FontStyle]::Bold)
+$fntMono = New-Object System.Drawing.Font('Consolas',  8.5)
+$fntHead = New-Object System.Drawing.Font('Segoe UI', 10, [System.Drawing.FontStyle]::Bold)
+
+# ---------------------------------------------------------------------------
+# Form
+# ---------------------------------------------------------------------------
+$form = New-Object System.Windows.Forms.Form
+$form.Text            = 'Exanima Save Manager'
+$form.Size            = New-Object System.Drawing.Size(920, 400)
+$form.MinimumSize     = New-Object System.Drawing.Size(600, 200)
+$form.BackColor       = $clrBg
+$form.ForeColor       = $clrText
+$form.Font            = $fntUI
+$form.StartPosition   = 'CenterScreen'
+
+# ---------------------------------------------------------------------------
+# Warning banner
+# ---------------------------------------------------------------------------
+$pnlWarn = New-Object System.Windows.Forms.Panel
+$pnlWarn.Dock      = 'Top'
+$pnlWarn.Height    = 36
+$pnlWarn.BackColor = $clrWarnBg
+$pnlWarn.Visible   = $false
+
+$lblWarn = New-Object System.Windows.Forms.Label
+$lblWarn.Dock      = 'Fill'
+$lblWarn.TextAlign = 'MiddleCenter'
+$lblWarn.Font      = $fntBold
+$lblWarn.ForeColor = $clrWarnText
+$lblWarn.Text      = 'Exanima is running.  Go to Main Menu or close the game before touching saves.  The game DELETES the active .rsg on death.'
+$pnlWarn.Controls.Add($lblWarn)
+
+# ---------------------------------------------------------------------------
+# Status bar
+# ---------------------------------------------------------------------------
+$pnlStatus = New-Object System.Windows.Forms.Panel
+$pnlStatus.Dock      = 'Bottom'
+$pnlStatus.Height    = 28
+$pnlStatus.BackColor = $clrPanel
+
+$lblStatus = New-Object System.Windows.Forms.Label
+$lblStatus.Dock      = 'Fill'
+$lblStatus.TextAlign = 'MiddleLeft'
+$lblStatus.ForeColor = $clrDim
+$lblStatus.Padding   = New-Object System.Windows.Forms.Padding(10, 0, 0, 0)
+$lblStatus.Text      = 'Ready.'
+$pnlStatus.Controls.Add($lblStatus)
+
+# ---------------------------------------------------------------------------
+# Main content
+# ---------------------------------------------------------------------------
+$pnlContent = New-Object System.Windows.Forms.Panel
+$pnlContent.Dock      = 'Fill'
+$pnlContent.Padding   = New-Object System.Windows.Forms.Padding(10, 8, 10, 6)
+$pnlContent.BackColor = $clrBg
+
+# Vertical split: saves left, backups right
+$split = New-Object System.Windows.Forms.SplitContainer
+$split.Dock             = 'Fill'
+$split.Orientation      = 'Vertical'
+$split.SplitterWidth    = 6
+$split.SplitterDistance = 72
+$split.BackColor        = $clrBg
+$split.Panel1.BackColor = $clrBg
+$split.Panel2.BackColor = $clrBg
+$pnlContent.Controls.Add($split)
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+function Make-GroupBox([string]$title) {
+    $gb = New-Object System.Windows.Forms.GroupBox
+    $gb.Text      = $title
+    $gb.Dock      = 'Fill'
+    $gb.ForeColor = $script:clrAccent
+    $gb.Font      = $script:fntHead
+    $gb.BackColor = $script:clrBg
+    $gb.Padding   = New-Object System.Windows.Forms.Padding(6, 4, 6, 6)
+    return $gb
+}
+
+function Make-ListView {
+    $lv = New-Object System.Windows.Forms.ListView
+    $lv.View          = 'Details'
+    $lv.FullRowSelect = $true
+    $lv.GridLines     = $false
+    $lv.BackColor     = $script:clrPanel
+    $lv.ForeColor     = $script:clrText
+    $lv.BorderStyle   = 'None'
+    $lv.MultiSelect   = $false
+    $lv.Font          = $script:fntMono
+    $lv.Dock          = 'Fill'
+    $lv.HeaderStyle   = 'Nonclickable'
+    return $lv
+}
+
+function Make-Button([string]$text, [bool]$primary, [int]$width) {
+    $btn = New-Object System.Windows.Forms.Button
+    $btn.Text      = $text
+    $btn.Width     = $width
+    $btn.Height    = 27
+    $btn.FlatStyle = 'Flat'
+    if ($primary) {
+        $btn.Font      = $script:fntBold
+        $btn.BackColor = $script:clrAccent
+        $btn.ForeColor = [System.Drawing.Color]::Black
+        $btn.FlatAppearance.BorderSize          = 0
+        $btn.FlatAppearance.MouseOverBackColor  = $script:clrAccentHi
+    } else {
+        $btn.Font      = $script:fntUI
+        $btn.BackColor = $script:clrInput
+        $btn.ForeColor = $script:clrText
+        $btn.FlatAppearance.BorderSize          = 1
+        $btn.FlatAppearance.BorderColor         = $script:clrBorder
     }
+    return $btn
+}
 
-    Write-Host '  Active files:' -ForegroundColor White
+function Fit-LastCol([System.Windows.Forms.ListView]$lv) {
+    if ($lv.Columns.Count -eq 0) { return }
+    $used = 0
+    for ($i = 0; $i -lt ($lv.Columns.Count - 1); $i++) { $used += $lv.Columns[$i].Width }
+    $avail = $lv.ClientSize.Width - $used - 4
+    if ($avail -gt 50) { $lv.Columns[$lv.Columns.Count - 1].Width = $avail }
+}
 
-    foreach ($f in $saves) {
-        $kb   = [math]::Round($f.Length / 1KB, 1)
-        $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
-        $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [Save][{0}]  {1,-22}  {2,6} KB   {3}' -f $mode, $f.Name, $kb, $mod) -ForegroundColor Gray
-    }
+function Set-Status([string]$msg, $color) {
+    if (-not $color) { $color = $script:clrDim }
+    $script:lblStatus.ForeColor = $color
+    $script:lblStatus.Text      = $msg
+}
 
-    foreach ($f in $ckpts) {
-        $kb   = [math]::Round($f.Length / 1KB, 1)
-        $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
-        $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [Ckpt][{0}]  {1,-22}  {2,6} KB   {3}' -f $mode, $f.Name, $kb, $mod) -ForegroundColor DarkGray
-    }
-
-    if ($ckpts.Count -gt 0) {
-        Write-Host '             Checkpoints are listed for reference only; they are not backed up.' -ForegroundColor DarkGray
-    }
-
-    Write-Host ''
+function Get-AltColor([int]$index) {
+    if ($index % 2 -eq 0) { return $script:clrPanel } else { return $script:clrPanelAlt }
 }
 
 # ---------------------------------------------------------------------------
-# BACKUP  (saves only - .rsg)
+# LEFT PANEL: action bar + Current Save Files
 # ---------------------------------------------------------------------------
-function Invoke-Backup {
-    Write-Header
-    Write-ClosedWarning
 
-    $saves = @(Get-CurrentSaves)
-    if ($saves.Count -eq 0) {
-        Write-Host '  No .rsg save files found. Nothing to back up.' -ForegroundColor Red
-        Write-Host '  (Checkpoints are not backed up by this tool.)' -ForegroundColor DarkGray
-        Pause-Menu
+# Action bar above the saves list
+$pnlActions = New-Object System.Windows.Forms.Panel
+$pnlActions.Dock      = 'Bottom'
+$pnlActions.Height    = 72
+$pnlActions.BackColor = $clrBg
+$pnlActions.Padding   = New-Object System.Windows.Forms.Padding(0, 0, 0, 6)
+
+$lblLabelCap = New-Object System.Windows.Forms.Label
+$lblLabelCap.Text      = 'Label:'
+$lblLabelCap.AutoSize  = $true
+$lblLabelCap.ForeColor = $clrDim
+$lblLabelCap.Location  = New-Object System.Drawing.Point(2, 8)
+
+$txtLabel = New-Object System.Windows.Forms.TextBox
+$txtLabel.BackColor   = $clrInput
+$txtLabel.ForeColor   = $clrText
+$txtLabel.BorderStyle = 'FixedSingle'
+$txtLabel.Location    = New-Object System.Drawing.Point(50, 5)
+$txtLabel.Anchor      = 'Top,Left,Right'
+$txtLabel.Size        = New-Object System.Drawing.Size(150, 24)
+
+$btnBackup     = Make-Button 'Backup Selected' $true  130
+$btnCheckpoint = Make-Button 'Make Checkpoint' $false 130
+
+$btnBackup.Location     = New-Object System.Drawing.Point(2,  36)
+$btnCheckpoint.Location = New-Object System.Drawing.Point(140, 36)
+
+$pnlActions.Controls.AddRange(@($lblLabelCap, $txtLabel, $btnBackup, $btnCheckpoint))
+
+# Saves GroupBox + ListView
+$grpSaves = Make-GroupBox 'Current Save Files'
+$grpSaves.Dock = 'Fill'
+
+$lvSaves = Make-ListView
+# Column order: Type, File, Modified, Size
+$lvSaves.Columns.Add('Type',     100) | Out-Null
+$lvSaves.Columns.Add('File',     100) | Out-Null
+$lvSaves.Columns.Add('Modified', 120) | Out-Null
+$lvSaves.Columns.Add('Size',      60) | Out-Null
+
+$grpSaves.Controls.Add($lvSaves)
+$grpSaves.Controls.Add($pnlActions)
+
+$split.Panel1.Controls.Add($grpSaves)
+
+# ---------------------------------------------------------------------------
+# RIGHT PANEL: Backups list + action row
+# ---------------------------------------------------------------------------
+$grpBackups = Make-GroupBox 'Backups'
+$split.Panel2.Controls.Add($grpBackups)
+
+$lvBackups = Make-ListView
+# Column order: Label, File, Type, Date
+$lvBackups.Columns.Add('Label', 150) | Out-Null
+$lvBackups.Columns.Add('File',  100) | Out-Null
+$lvBackups.Columns.Add('Type',   55) | Out-Null
+$lvBackups.Columns.Add('Date',  130) | Out-Null
+
+$pnlBackupRow = New-Object System.Windows.Forms.Panel
+$pnlBackupRow.Dock      = 'Bottom'
+$pnlBackupRow.Height    = 42
+$pnlBackupRow.BackColor = $clrBg
+
+$btnRestore = Make-Button 'Restore Selected' $true  148
+$btnDelete  = Make-Button 'Delete Backup'    $false 130
+
+$btnRestore.Location = New-Object System.Drawing.Point(0,   7)
+$btnDelete.Location  = New-Object System.Drawing.Point(156, 7)
+$btnDelete.ForeColor = $clrRed
+$btnDelete.FlatAppearance.BorderColor = $clrRed
+
+$pnlBackupRow.Controls.AddRange(@($btnRestore, $btnDelete))
+$grpBackups.Controls.Add($lvBackups)
+$grpBackups.Controls.Add($pnlBackupRow)
+
+# ---------------------------------------------------------------------------
+# Assemble form (Fill first, then Bottom, then Top for correct dock order)
+# ---------------------------------------------------------------------------
+$form.Controls.Add($pnlContent)
+$form.Controls.Add($pnlStatus)
+$form.Controls.Add($pnlWarn)
+
+# ---------------------------------------------------------------------------
+# Populate saves list
+# ---------------------------------------------------------------------------
+function Refresh-Saves {
+    $script:lvSaves.Items.Clear()
+    $idx = 0
+
+    foreach ($f in @(Get-CurrentSaves)) {
+        $isArena = $f.Name -match '^Arena'
+        $type    = if ($isArena) { 'Arena' } else { 'Dungeon' }
+        $mod     = $f.LastWriteTime.ToString('MM-dd  HH:mm')
+        $kb      = '{0:N1} KB' -f ($f.Length / 1KB)
+
+        $item = New-Object System.Windows.Forms.ListViewItem($type)
+        $item.SubItems.Add($f.Name) | Out-Null
+        $item.SubItems.Add($mod)    | Out-Null
+        $item.SubItems.Add($kb)     | Out-Null
+        $item.Tag                    = $f
+        $item.UseItemStyleForSubItems = $true
+        $item.BackColor = Get-AltColor $idx
+        $item.ForeColor = if ($isArena) { $script:clrArena } else { $script:clrText }
+        $script:lvSaves.Items.Add($item) | Out-Null
+        $idx++
+    }
+
+    foreach ($f in @(Get-CurrentCheckpoints)) {
+        $isArena = $f.Name -match '^Arena'
+        $type    = if ($isArena) { 'Arena' } else { 'Dungeon' }
+        $mod     = $f.LastWriteTime.ToString('MM-dd  HH:mm')
+        $kb      = '{0:N1} KB' -f ($f.Length / 1KB)
+
+        $item = New-Object System.Windows.Forms.ListViewItem($type)
+        $item.SubItems.Add($f.Name) | Out-Null
+        $item.SubItems.Add($mod)    | Out-Null
+        $item.SubItems.Add($kb)     | Out-Null
+        $item.Tag                    = $f
+        $item.UseItemStyleForSubItems = $true
+        $item.BackColor = Get-AltColor $idx
+        $item.ForeColor = $script:clrDim
+        $script:lvSaves.Items.Add($item) | Out-Null
+        $idx++
+    }
+
+    Fit-LastCol $script:lvSaves
+}
+
+# ---------------------------------------------------------------------------
+# Populate backups list
+# ---------------------------------------------------------------------------
+function Refresh-Backups {
+    $script:lvBackups.Items.Clear()
+    $idx = 0
+
+    foreach ($b in @(Get-Backups)) {
+        $label = Parse-BackupLabel $b.Name
+        $date  = Parse-BackupDate  $b.Name
+        $type  = Get-BackupType    $b
+        $files = @(Get-ChildItem $b.FullName -ErrorAction SilentlyContinue)
+        $names = ($files | ForEach-Object { $_.Name }) -join ', '
+        $displayLabel = if ($label) { $label } else { '(unlabeled)' }
+
+        $item = New-Object System.Windows.Forms.ListViewItem($displayLabel)
+        $item.SubItems.Add($names)  | Out-Null
+        $item.SubItems.Add($type)   | Out-Null
+        $item.SubItems.Add($date)   | Out-Null
+        $item.Tag                    = $b
+        $item.UseItemStyleForSubItems = $true
+        $item.BackColor = Get-AltColor $idx
+        $item.ForeColor = if ($type -eq 'Arena') { $script:clrArena } else { $script:clrText }
+        $script:lvBackups.Items.Add($item) | Out-Null
+        $idx++
+    }
+
+    foreach ($b in @(Get-ReloadBackups)) {
+        $date  = Parse-BackupDate $b.Name
+        $files = @(Get-ChildItem $b.FullName -ErrorAction SilentlyContinue)
+        $names = ($files | ForEach-Object { $_.Name }) -join ', '
+
+        $item = New-Object System.Windows.Forms.ListViewItem('[reload backup]')
+        $item.SubItems.Add($names)  | Out-Null
+        $item.SubItems.Add('Auto')  | Out-Null
+        $item.SubItems.Add($date)   | Out-Null
+        $item.Tag                    = $b
+        $item.UseItemStyleForSubItems = $true
+        $item.BackColor = Get-AltColor $idx
+        $item.ForeColor = $script:clrDim
+        $script:lvBackups.Items.Add($item) | Out-Null
+        $idx++
+    }
+
+    Fit-LastCol $script:lvBackups
+}
+
+function Refresh-All {
+    Refresh-Saves
+    Refresh-Backups
+    Set-SaveButtonStates
+    Set-BackupButtonStates
+}
+
+# ---------------------------------------------------------------------------
+# Grey out Make Checkpoint when an Arena save is selected
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Button active/dim helpers
+# ---------------------------------------------------------------------------
+function Set-SaveButtonStates {
+    $sel = $script:lvSaves.SelectedItems
+    if ($sel.Count -eq 0) {
+        # Nothing selected - dim both
+        $script:btnBackup.BackColor                        = $script:clrAccentDim
+        $script:btnBackup.ForeColor                        = $script:clrDim
+        $script:btnCheckpoint.BackColor                    = $script:clrInput
+        $script:btnCheckpoint.ForeColor                    = $script:clrDim
+        $script:btnCheckpoint.FlatAppearance.BorderColor   = $script:clrBorder
+        return
+    }
+    $f = $sel[0].Tag
+    $isRsg    = $f.Extension -eq '.rsg'
+    $isDungeon = $f.Name -match '^Exanima'
+
+    # Backup: active for any .rsg
+    if ($isRsg) {
+        $script:btnBackup.BackColor = $script:clrAccent
+        $script:btnBackup.ForeColor = [System.Drawing.Color]::Black
+    } else {
+        $script:btnBackup.BackColor = $script:clrAccentDim
+        $script:btnBackup.ForeColor = $script:clrDim
+    }
+
+    # Checkpoint: active only for Dungeon .rsg
+    if ($isRsg -and $isDungeon) {
+        $script:btnCheckpoint.BackColor                  = $script:clrInput
+        $script:btnCheckpoint.ForeColor                  = $script:clrFire
+        $script:btnCheckpoint.FlatAppearance.BorderColor = $script:clrBorder
+        $script:btnCheckpoint.Enabled                    = $true
+    } else {
+        $script:btnCheckpoint.BackColor                  = $script:clrInput
+        $script:btnCheckpoint.ForeColor                  = $script:clrDim
+        $script:btnCheckpoint.FlatAppearance.BorderColor = $script:clrBorder
+        $script:btnCheckpoint.Enabled                    = $false
+    }
+}
+
+function Set-BackupButtonStates {
+    $sel = $script:lvBackups.SelectedItems
+    if ($sel.Count -eq 0) {
+        $script:btnRestore.BackColor                     = $script:clrAccentDim
+        $script:btnRestore.ForeColor                     = $script:clrDim
+        $script:btnDelete.BackColor                      = $script:clrRedDim
+        $script:btnDelete.ForeColor                      = $script:clrDim
+        $script:btnDelete.FlatAppearance.BorderColor     = $script:clrRedDim
+    } else {
+        $script:btnRestore.BackColor                     = $script:clrAccent
+        $script:btnRestore.ForeColor                     = [System.Drawing.Color]::Black
+        $script:btnDelete.BackColor                      = $script:clrRed
+        $script:btnDelete.ForeColor                      = [System.Drawing.Color]::Black
+        $script:btnDelete.FlatAppearance.BorderColor     = $script:clrRed
+    }
+}
+
+$lvSaves.Add_SelectedIndexChanged({   Set-SaveButtonStates })
+$lvBackups.Add_SelectedIndexChanged({ Set-BackupButtonStates })
+
+# ---------------------------------------------------------------------------
+# BACKUP
+# ---------------------------------------------------------------------------
+$btnBackup.Add_Click({
+    $sel = $script:lvSaves.SelectedItems
+    if ($sel.Count -eq 0) {
+        Set-Status 'Select a save file from the list.' $script:clrRed
+        return
+    }
+    $f = $sel[0].Tag
+    if ($f.Extension -ne '.rsg') {
+        Set-Status 'Checkpoints (.rcp) are not backed up.  Select an .rsg save.' $script:clrRed
         return
     }
 
-    Write-Host '  Select a save to back up:' -ForegroundColor White
-    Write-Host ''
-    for ($i = 0; $i -lt $saves.Count; $i++) {
-        $f    = $saves[$i]
-        $kb   = [math]::Round($f.Length / 1KB, 1)
-        $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
-        $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [{0}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
-    }
-    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
-    Write-Host ''
-
-    $raw = Read-Host '  Select'
-    if ($raw -notmatch '^\d+$') { return }
-    $idx = [int]$raw
-    if ($idx -eq 0) { return }
-    if ($idx -lt 1 -or $idx -gt $saves.Count) {
-        Write-Host '  Invalid selection.' -ForegroundColor Red
-        Pause-Menu
-        return
-    }
-
-    $selected = $saves[$idx - 1]
-
-    Write-Host ''
-    Write-Host '  Enter a label for this backup (optional, Enter to skip):' -ForegroundColor White
-    $raw   = (Read-Host '  Label').Trim()
-    $label = $raw -replace '[\\/:*?"<>|]', '_'
-
+    $rawLabel   = ($script:txtLabel.Text.Trim()) -replace '[\\/:*?"<>|]', '_'
+    $isArena    = $f.Name -match '^Arena'
+    $prefix     = if ($isArena) { 'Arena_' } else { '' }
     $ts         = Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'
-    $folderName = if ($label) { "${ts}_${label}" } else { $ts }
-    $dest       = Join-Path $BackupRoot $folderName
+    $folderName = if ($rawLabel) { "${prefix}${ts}_${rawLabel}" } else { "${prefix}${ts}" }
+    $dest       = Join-Path $script:BackupRoot $folderName
 
-    New-Item -ItemType Directory -Path $dest -Force | Out-Null
-    Copy-Item -Path $selected.FullName -Destination $dest -Force
+    try {
+        New-Item -ItemType Directory -Path $dest -Force | Out-Null
+        Copy-Item -Path $f.FullName -Destination $dest -Force
+        $script:txtLabel.Text = ''
+        Refresh-All
+        Set-Status "Backed up:  $($f.Name)   to   $folderName" $script:clrGreen
+    } catch {
+        Set-Status "Backup failed: $_" $script:clrRed
+    }
+})
 
-    Write-Host ''
-    Write-Host "  Backed up : $($selected.Name)  [Saved Game]" -ForegroundColor Green
-    Write-Host "  Saved to  : $dest"                            -ForegroundColor Cyan
-    Pause-Menu
-}
+# ---------------------------------------------------------------------------
+# MAKE CHECKPOINT
+# ---------------------------------------------------------------------------
+$btnCheckpoint.Add_Click({
+    $sel = $script:lvSaves.SelectedItems
+    if ($sel.Count -eq 0) {
+        Set-Status 'Select a Dungeon .rsg save to copy as a checkpoint.' $script:clrRed
+        return
+    }
+    $f = $sel[0].Tag
+    if ($f.Extension -ne '.rsg' -or $f.Name -notmatch '^Exanima') {
+        Set-Status 'Checkpoints only apply to Dungeon (Exanima*.rsg) saves.' $script:clrRed
+        return
+    }
+
+    $base     = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+    $destName = "$base.rcp"
+    $destPath = Join-Path $script:SaveDir $destName
+
+    $msg = "Copy  $($f.Name)  as checkpoint  $destName ?`n`nThe original .rsg save will not be modified."
+    if (Test-Path $destPath) {
+        $msg = "Overwrite existing checkpoint  $destName ?`n`nThe original $($f.Name) will not be modified."
+    }
+
+    if ([System.Windows.Forms.MessageBox]::Show($msg, 'Make Checkpoint', 'YesNo', 'Question') -ne 'Yes') { return }
+
+    try {
+        Copy-Item -Path $f.FullName -Destination $destPath -Force
+        Refresh-All
+        Set-Status "Checkpoint created: $destName" $script:clrGreen
+    } catch {
+        Set-Status "Failed: $_" $script:clrRed
+    }
+})
 
 # ---------------------------------------------------------------------------
 # RESTORE
 # ---------------------------------------------------------------------------
-function Invoke-Restore {
-    Write-Header
-    Write-ClosedWarning
-
-    $backups = @(Get-Backups)
-    if ($backups.Count -eq 0) {
-        Write-Host '  No backups found. Create one first.' -ForegroundColor Red
-        Pause-Menu
+$btnRestore.Add_Click({
+    $sel = $script:lvBackups.SelectedItems
+    if ($sel.Count -eq 0) {
+        Set-Status 'Select a backup to restore.' $script:clrRed
         return
     }
-
-    Write-Host '  Available backups  (newest first):' -ForegroundColor White
-    Write-Host ''
-    for ($i = 0; $i -lt $backups.Count; $i++) {
-        $b     = $backups[$i]
-        $files = @(Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue)
-        $names = ($files | ForEach-Object { $_.Name }) -join '  '
-        Write-Host ('  [{0}]  {1}' -f ($i + 1), $b.Name) -ForegroundColor Yellow
-        Write-Host ('         {0}'   -f $names)              -ForegroundColor DarkGray
-        Write-Host ''
-    }
-    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
-    Write-Host ''
-
-    $raw = Read-Host '  Select backup number'
-    if ($raw -notmatch '^\d+$') { return }
-    $idx = [int]$raw
-    if ($idx -eq 0) { return }
-    if ($idx -lt 1 -or $idx -gt $backups.Count) {
-        Write-Host '  Invalid selection.' -ForegroundColor Red
-        Pause-Menu
-        return
-    }
-
-    $selected    = $backups[$idx - 1]
-    $toRestore   = @(Get-ChildItem -Path $selected.FullName -ErrorAction SilentlyContinue)
-
+    $b         = $sel[0].Tag
+    $toRestore = @(Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue)
     if ($toRestore.Count -eq 0) {
-        Write-Host '  Backup folder is empty. Nothing to restore.' -ForegroundColor Red
-        Pause-Menu
+        Set-Status 'Backup folder is empty.' $script:clrRed
         return
     }
 
-    Write-Host ''
-    Write-Host "  Selected : $($selected.Name)" -ForegroundColor Cyan
-    Write-Host ''
+    $fileList = ($toRestore | ForEach-Object { $_.Name }) -join ', '
+    if ([System.Windows.Forms.MessageBox]::Show(
+        "Restore from backup:`n`n$($b.Name)`n`nFiles: $fileList`n`nCurrent .rsg saves will be replaced. A reload backup is created automatically first.",
+        'Confirm Restore', 'YesNo', 'Warning'
+    ) -ne 'Yes') { return }
 
-    # Show what will happen to each file - exist = overwrite, missing = restore fresh
-    foreach ($f in $toRestore) {
-        $destPath = Join-Path $SaveDir $f.Name
-        if (Test-Path $destPath) {
-            Write-Host "  [OVERWRITE]  $($f.Name)" -ForegroundColor Yellow
-        } else {
-            Write-Host "  [RESTORE]    $($f.Name)  (not currently in save dir)" -ForegroundColor Cyan
-        }
+    # Prune old reload backups
+    @(Get-ReloadBackups) | ForEach-Object {
+        Remove-Item -Path $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host ''
-    Write-Host '  Confirm? (Y / N)' -ForegroundColor White
-    $confirm = (Read-Host '  ').Trim()
-    if ($confirm -notmatch '^[Yy]') {
-        Write-Host '  Restore cancelled.' -ForegroundColor DarkGray
-        Pause-Menu
-        return
-    }
-
-    # Safety backup of any .rsg files currently in save dir before overwriting
-    $current = @(Get-CurrentSaves)
-    if ($current.Count -gt 0) {
-        $safeDir = Join-Path $BackupRoot ("PRE-RESTORE_{0}" -f (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
+    # Create reload backup containing only the files that are about to be overwritten.
+    # Inherits Arena_ prefix if any of the files being restored are Arena saves.
+    $willOverwrite = @($toRestore | Where-Object { Test-Path (Join-Path $script:SaveDir $_.Name) })
+    if ($willOverwrite.Count -gt 0) {
+        $hasArena   = [bool]($willOverwrite | Where-Object { $_.Name -match '^Arena' })
+        $typePrefix = if ($hasArena) { 'Arena_' } else { '' }
+        $safeDir    = Join-Path $script:BackupRoot ("${typePrefix}Reload_{0}" -f (Get-Date -Format 'yyyy-MM-dd_HH-mm-ss'))
         New-Item -ItemType Directory -Path $safeDir -Force | Out-Null
-        foreach ($f in $current) {
-            Copy-Item -Path $f.FullName -Destination $safeDir -Force
+        $willOverwrite | ForEach-Object {
+            Copy-Item (Join-Path $script:SaveDir $_.Name) -Destination $safeDir -Force
         }
-        Write-Host ''
-        Write-Host '  Safety backup of current saves created:' -ForegroundColor DarkGray
-        Write-Host "  $safeDir"                                -ForegroundColor DarkGray
     }
 
-    # Restore
-    Write-Host ''
-    $anyFailed = $false
+    # Restore files
+    $failed = $false
     foreach ($f in $toRestore) {
-        $destPath = Join-Path $SaveDir $f.Name
         try {
-            Copy-Item -Path $f.FullName -Destination $destPath -Force
-            if (Test-Path $destPath) {
-                Write-Host "  OK  $($f.Name)  -->  $destPath" -ForegroundColor Green
-            } else {
-                Write-Host "  FAILED (no error thrown but file missing): $($f.Name)" -ForegroundColor Red
-                $anyFailed = $true
-            }
+            Copy-Item -Path $f.FullName -Destination (Join-Path $script:SaveDir $f.Name) -Force
         } catch {
-            Write-Host "  FAILED  $($f.Name) : $_" -ForegroundColor Red
-            $anyFailed = $true
+            $failed = $true
         }
     }
 
-    Write-Host ''
-    if ($anyFailed) {
-        Write-Host '  One or more files failed to restore. See errors above.' -ForegroundColor Red
+    Refresh-All
+    if ($failed) {
+        Set-Status 'Restore completed with errors. Some files may not have copied.' $script:clrRed
     } else {
-        Write-Host '  Restore complete.' -ForegroundColor Green
-        Write-Host '  Launch Exanima and hit Continue (or switch back if at main menu).' -ForegroundColor Cyan
+        Set-Status "Restored: $fileList     Launch Exanima and hit Continue." $script:clrGreen
     }
-    Pause-Menu
-}
-
+})
 
 # ---------------------------------------------------------------------------
-# MAKE SAVE INTO CHECKPOINT
-# Copies a .rsg saved game to a .rcp checkpoint file (same base name).
-# The original .rsg is left untouched.
-# Extension is the only difference the game cares about.
+# DELETE
 # ---------------------------------------------------------------------------
-function Invoke-MakeCheckpoint {
-    Write-Header
-    Write-ClosedWarning
-
-    $saves = @(Get-CurrentSaves)
-    if ($saves.Count -eq 0) {
-        Write-Host '  No .rsg save files found. Nothing to promote.' -ForegroundColor Red
-        Pause-Menu
+$btnDelete.Add_Click({
+    $sel = $script:lvBackups.SelectedItems
+    if ($sel.Count -eq 0) {
+        Set-Status 'Select a backup to delete.' $script:clrRed
         return
     }
+    $b = $sel[0].Tag
+    if ([System.Windows.Forms.MessageBox]::Show(
+        "Permanently delete this backup?`n`n$($b.Name)",
+        'Confirm Delete', 'YesNo', 'Warning'
+    ) -ne 'Yes') { return }
 
-    Write-Host '  Select a save to copy as checkpoint (.rcp):' -ForegroundColor White
-    Write-Host ''
-    for ($i = 0; $i -lt $saves.Count; $i++) {
-        $f    = $saves[$i]
-        $kb   = [math]::Round($f.Length / 1KB, 1)
-        $mod  = $f.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
-        $mode = if ($f.Name -match '^Arena') { 'Arena  ' } else { 'Dungeon' }
-        Write-Host ('  [{0}]  [{1}]  {2,-22}  {3,6} KB   {4}' -f ($i + 1), $mode, $f.Name, $kb, $mod) -ForegroundColor Yellow
+    try {
+        Remove-Item -Path $b.FullName -Recurse -Force
+        Refresh-All
+        Set-Status "Deleted: $($b.Name)" $script:clrGreen
+    } catch {
+        Set-Status "Delete failed: $_" $script:clrRed
     }
-    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
-    Write-Host ''
-
-    $raw = Read-Host '  Select'
-    if ($raw -notmatch '^\d+$') { return }
-    $idx = [int]$raw
-    if ($idx -eq 0) { return }
-    if ($idx -lt 1 -or $idx -gt $saves.Count) {
-        Write-Host '  Invalid selection.' -ForegroundColor Red
-        Pause-Menu
-        return
-    }
-
-    $src      = $saves[$idx - 1]
-    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($src.Name)
-    $destName = "$baseName.rcp"
-    $destPath = Join-Path $SaveDir $destName
-
-    Write-Host ''
-    Write-Host "  Source      : $($src.Name)  [Saved Game]"  -ForegroundColor Gray
-    Write-Host "  Will create : $destName  [Checkpoint]"      -ForegroundColor Cyan
-
-    if (Test-Path $destPath) {
-        $existing = Get-Item $destPath
-        $mod      = $existing.LastWriteTime.ToString('yyyy-MM-dd  HH:mm:ss')
-        Write-Host ''
-        Write-Host "  [!] A checkpoint already exists for this slot:" -ForegroundColor Yellow
-        Write-Host ("      {0}   last modified {1}" -f $destName, $mod) -ForegroundColor Yellow
-        Write-Host '      It will be overwritten.' -ForegroundColor Yellow
-    }
-
-    Write-Host ''
-    Write-Host '  Confirm? (Y / N)' -ForegroundColor White
-    $confirm = (Read-Host '  ').Trim()
-    if ($confirm -notmatch '^[Yy]') {
-        Write-Host '  Cancelled.' -ForegroundColor DarkGray
-        Pause-Menu
-        return
-    }
-
-    Copy-Item -Path $src.FullName -Destination $destPath -Force
-    Write-Host ''
-    Write-Host "  Done. $destName is now your checkpoint for slot $baseName." -ForegroundColor Green
-    Write-Host '  The original .rsg save is unchanged.'                        -ForegroundColor DarkGray
-    Pause-Menu
-}
+})
 
 # ---------------------------------------------------------------------------
-# DELETE BACKUP
+# Resize handlers
 # ---------------------------------------------------------------------------
-function Invoke-DeleteBackup {
-    Write-Header
-
-    $all = @(@(Get-Backups) + @(Get-SafetyBackups)) | Sort-Object Name -Descending
-
-    if ($all.Count -eq 0) {
-        Write-Host '  No backups found.' -ForegroundColor Red
-        Pause-Menu
-        return
-    }
-
-    Write-Host '  Select a backup to permanently DELETE:' -ForegroundColor White
-    Write-Host ''
-    for ($i = 0; $i -lt $all.Count; $i++) {
-        $tag = if ($all[$i].Name -match '^PRE-RESTORE_') { '[auto]  ' } else { '        ' }
-        Write-Host ('  [{0}]  {1}{2}' -f ($i + 1), $tag, $all[$i].Name) -ForegroundColor Yellow
-    }
-    Write-Host '  [0]  Cancel' -ForegroundColor DarkGray
-    Write-Host ''
-
-    $raw = Read-Host '  Select'
-    if ($raw -notmatch '^\d+$') { return }
-    $idx = [int]$raw
-    if ($idx -eq 0) { return }
-    if ($idx -lt 1 -or $idx -gt $all.Count) {
-        Write-Host '  Invalid selection.' -ForegroundColor Red
-        Pause-Menu
-        return
-    }
-
-    $target = $all[$idx - 1]
-    Write-Host ''
-    Write-Host ("  Permanently delete '{0}'? (Y / N)" -f $target.Name) -ForegroundColor Yellow
-    $confirm = (Read-Host '  ').Trim()
-    if ($confirm -notmatch '^[Yy]') {
-        Write-Host '  Deletion cancelled.' -ForegroundColor DarkGray
-        Pause-Menu
-        return
-    }
-
-    Remove-Item -Path $target.FullName -Recurse -Force
-    Write-Host "  Deleted: $($target.Name)" -ForegroundColor Green
-    Pause-Menu
-}
+$lvSaves.Add_SizeChanged({   Fit-LastCol $script:lvSaves })
+$lvBackups.Add_SizeChanged({ Fit-LastCol $script:lvBackups })
 
 # ---------------------------------------------------------------------------
-# LIST ALL BACKUPS
+# Game running poll (every 2 seconds)
 # ---------------------------------------------------------------------------
-function Invoke-ListBackups {
-    Write-Header
+$timer = New-Object System.Windows.Forms.Timer
+$timer.Interval = 2000
+$timer.Add_Tick({
+    $script:pnlWarn.Visible = [bool](Get-Process -Name 'Exanima' -ErrorAction SilentlyContinue)
+})
+$timer.Start()
+$form.Add_FormClosing({ $script:timer.Stop() })
 
-    $reg  = @(Get-Backups)
-    $safe = @(Get-SafetyBackups)
-
-    if ($reg.Count -eq 0 -and $safe.Count -eq 0) {
-        Write-Host '  No backups found.' -ForegroundColor DarkGray
-        Pause-Menu
-        return
+# ---------------------------------------------------------------------------
+# Refresh on focus-return from another app (not on every click)
+# ---------------------------------------------------------------------------
+$script:wasDeactivated = $false
+$form.Add_Deactivate({ $script:wasDeactivated = $true })
+$form.Add_Activated({
+    if ($script:wasDeactivated) {
+        $script:wasDeactivated = $false
+        Refresh-All
     }
-
-    if ($reg.Count -gt 0) {
-        Write-Host '  Named backups:' -ForegroundColor White
-        Write-Host ''
-        foreach ($b in $reg) {
-            $files = Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue
-            $names = ($files | ForEach-Object { $_.Name }) -join '  '
-            Write-Host "  $($b.Name)"  -ForegroundColor Yellow
-            Write-Host "    $names"    -ForegroundColor DarkGray
-            Write-Host ''
-        }
-    }
-
-    if ($safe.Count -gt 0) {
-        Write-Host '  Auto safety backups (created before each restore):' -ForegroundColor White
-        Write-Host ''
-        foreach ($b in $safe) {
-            $files = Get-ChildItem -Path $b.FullName -ErrorAction SilentlyContinue
-            $names = ($files | ForEach-Object { $_.Name }) -join '  '
-            Write-Host "  $($b.Name)"  -ForegroundColor DarkGray
-            Write-Host "    $names"    -ForegroundColor DarkGray
-            Write-Host ''
-        }
-    }
-
-    Pause-Menu
-}
+})
 
 # ---------------------------------------------------------------------------
 # Entry guard
 # ---------------------------------------------------------------------------
 if (-not (Test-Path $SaveDir)) {
-    Write-Host "ERROR: Save directory not found:" -ForegroundColor Red
-    Write-Host "  $SaveDir"                        -ForegroundColor Red
-    Write-Host ''
-    Write-Host 'Launch Exanima at least once so the folder is created, then re-run.' -ForegroundColor Yellow
+    [System.Windows.Forms.MessageBox]::Show(
+        "Save directory not found:`n$SaveDir`n`nLaunch Exanima at least once to create it.",
+        'Exanima Save Manager', 'OK', 'Error'
+    )
     exit 1
 }
-
 New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
 
 # ---------------------------------------------------------------------------
-# Main loop
+# Run
 # ---------------------------------------------------------------------------
-while ($true) {
-    Write-Header
-    Show-CurrentSaves
+$form.Add_Shown({
+    Refresh-All
+    Set-SaveButtonStates
+    Set-BackupButtonStates
+})
+[void]$form.ShowDialog()
 
-    Write-Host '  ==> MENU <=='                              -ForegroundColor Magenta
-    Write-Host ''
-    Write-Host -NoNewline '  [1]  ' -ForegroundColor Green
-    Write-Host 'Backup a save'                               -ForegroundColor Cyan
-    Write-Host -NoNewline '  [2]  ' -ForegroundColor DarkGreen
-    Write-Host 'Restore a backup'                            -ForegroundColor DarkCyan
-    Write-Host -NoNewline '  [3]  ' -ForegroundColor Green
-    Write-Host 'List all backups'                            -ForegroundColor Cyan
-    Write-Host -NoNewline '  [4]  ' -ForegroundColor DarkGreen
-    Write-Host 'Delete a backup'                             -ForegroundColor DarkCyan
-    Write-Host -NoNewline '  [5]  ' -ForegroundColor Green
-    Write-Host 'Make save into checkpoint (.rcp)'            -ForegroundColor Cyan
-    Write-Host -NoNewline '  [Q]  ' -ForegroundColor DarkGreen
-    Write-Host 'Quit'                                        -ForegroundColor DarkCyan
-    Write-Host ''
-
-    $choice = (Read-Host '  >').Trim().ToUpper()
-
-    switch ($choice) {
-        '1'     { Invoke-Backup }
-        '2'     { Invoke-Restore }
-        '3'     { Invoke-ListBackups }
-        '4'     { Invoke-DeleteBackup }
-        '5'     { Invoke-MakeCheckpoint }
-        'Q'     { Clear-Host; exit 0 }
-        default { }
-    }
-}
+$timer.Dispose()
+$fntUI.Dispose()
+$fntBold.Dispose()
+$fntHead.Dispose()
+$fntMono.Dispose()
+$form.Dispose()
