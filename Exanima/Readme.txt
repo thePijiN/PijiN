@@ -13,10 +13,10 @@ If you're skeptical to run random PowerShell scripts - review the code or have a
 
 To compile the .ps1 as .exe yourself, using PS2EXE: 
 # Compile Exanima Save Manager
-ps2exe "C:\Path\To\Exanima_SaveManager\Exanima_SaveManager.ps1" "C:\Path\To\Exanima_SaveManager\Exanima_SaveManager.exe" -title "Exanima Save Manager" -description "Backup/Restore/Convert save to checkpoint" -version 2 -requireAdmin -noConsole -DPIAware
+ps2exe "C:\Path\To\Exanima_SaveManager.ps1" "C:\Path\To\Exanima_SaveManager.exe" -title "Exanima Save Manager" -description "Backup/Restore/Convert save to checkpoint" -version 2 -requireAdmin -noConsole -DPIAware
 
 # Compile Exanima Cursor Config
-ps2exe "C:\Path\To\Exanima_SaveManager\Exanima_CursorConfig.ps1" "C:\Path\To\Exanima_SaveManager\Exanima_CursorConfig.exe" -title "Exanima Cursor Editor" -description "Change Interation/Combat cursor color & size." -version 2 -requireAdmin -noConsole -DPIAware
+ps2exe "C:\Path\To\Exanima_CursorConfig.ps1" "C:\Path\To\Exanima_CursorConfig.exe" -title "Exanima Cursor Editor" -description "Change Interation/Combat cursor color & size." -version 2 -requireAdmin -noConsole -DPIAware
 
 Just change the source path to match wherever you downloaded the .ps1 to, and the output to wherever you want the .exe saved to.
 
