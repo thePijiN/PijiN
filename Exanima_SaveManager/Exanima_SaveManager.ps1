@@ -18,6 +18,14 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 [System.Windows.Forms.Application]::EnableVisualStyles()
 
+# dark title bar support (silently ignored on older Windows)
+try {
+    Add-Type -Namespace Native -Name Dwm -MemberDefinition @"
+[System.Runtime.InteropServices.DllImport("dwmapi.dll")]
+public static extern int DwmSetWindowAttribute(System.IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+"@
+} catch { }
+
 # ---------------------------------------------------------------------------
 # Paths & patterns
 # ---------------------------------------------------------------------------
@@ -122,6 +130,8 @@ $form = New-Object System.Windows.Forms.Form
 $form.Text            = 'Exanima Save Manager'
 $form.Size            = New-Object System.Drawing.Size(920, 400)
 $form.MinimumSize     = New-Object System.Drawing.Size(600, 200)
+$script:form.FormBorderStyle = 'FixedDialog'
+$script:form.MaximizeBox = $false
 $form.BackColor       = $clrBg
 $form.ForeColor       = $clrText
 $form.Font            = $fntUI
@@ -693,6 +703,14 @@ New-Item -ItemType Directory -Path $BackupRoot -Force | Out-Null
 # Run
 # ---------------------------------------------------------------------------
 $form.Add_Shown({
+	try {
+        $v = 1
+        $res = [Native.Dwm]::DwmSetWindowAttribute($script:form.Handle, 20, [ref]$v, 4)
+        if ($res -ne 0) {
+            [Native.Dwm]::DwmSetWindowAttribute($script:form.Handle, 19, [ref]$v, 4) | Out-Null
+        }
+        $script:form.Invalidate($true)
+    } catch { }
     Refresh-All
     Set-SaveButtonStates
     Set-BackupButtonStates
