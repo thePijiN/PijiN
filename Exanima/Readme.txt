@@ -11,7 +11,7 @@ This utility allows you to easily adjust your in-game cursor colors (for both In
 ~~~ For the skeptics ~~~
 If you're skeptical to run random PowerShell scripts - review the code or have an AI review it for you first, and compile the executable yourself.
 
-To compile the .ps1 as .exe yourself, using PS2EXE: 
+To compile the .ps1 as .exe yourself using PS2EXE - Modify the paths and run these commands in PowerShell: 
 # Compile Exanima Save Manager
 ps2exe "C:\Path\To\Exanima_SaveManager.ps1" "C:\Path\To\Exanima_SaveManager.exe" -title "Exanima Save Manager" -description "Backup/Restore/Convert save to checkpoint" -version 2 -requireAdmin -noConsole -DPIAware
 
