@@ -1,5 +1,5 @@
 Clear-Host
-$SpacegameVersion = "0.1.0"
+$SpacegameVersion = "0.0.3"
 # region ##### GAME INITIALIZER #####
 function Start-NewGame {
     # Set the global start time for the survival clock
