@@ -13,7 +13,7 @@ A terminal space-prospecting game about squeezing value out of hostile planets,
 selling resources, buying consumables, completing contracts for upgrades, and not
 dying in the process.
 
-Made entirely in a PowerShell 5.1 script. <200KB in size, no install required.
+Made entirely in a portable PowerShell 5.1 script. No install required.
 Save files are made **manually** and go to `%APPDATA%` - no other residue.
 
 ### For cautious pilots
@@ -24,7 +24,7 @@ SpaceFRACK is distributed as both the original `.ps1` script and a compiled
 You can:
 
 1. Open `Spacegame.ps1` in a text editor and inspect it directly.
-2. Paste the script into ChatGPT, Claude, or another code assistant and ask it
+2. Paste the script into ChatGPT, Claude, or whatever and ask it
    to summarize what the script does and whether it touches files, network, or
    system settings, etc.
 3. Build the `.exe` yourself from the reviewed `.ps1` using a PowerShell script
@@ -42,9 +42,11 @@ ps2exe .\Spacegame.ps1 .\SpaceFRACK.exe -title SpaceFRACK -description "Go forth
 
 Managing these three values is the key to not dying or getting stranded:
 
-- `HP` = Health. When this hits zero, that's it.
-- `FL` = Fuel. Travel, scanning, and survival all get awkward when this runs dry.
-- `WT` = Weight. Your cargo has limits. Heavy pockets can end a good run fast.
+- `Health.` When this hits zero, that's the run. (Though you can Save/Load manually)
+- `Fuel.` Travel, scanning, and survival all get awkward when this runs dry.
+- `Weight.` Your cargo capacity has its limits.
+
+All of which can be improved with upgrades from contracts, trading, or even fracking.
 
 `CD` is currency. Use it to buy consumables, repair, refuel, and become more
 powerful. Manage it wisely.
@@ -64,6 +66,11 @@ Each planet also has:
 
 Traders are essential for commerce. They buy resources, sell supplies and
 upgrades, repair your ship, refuel your tanks, and hand out contracts.
+Traders restock on the quarter hour, and their stock has weighted 
+availability and quantity rolls.
+
+Typhon is the harsher second system. It offers new resources, factions,
+contracts, and upgrades - but is still currently WIP.
 
 ## The Loop
 
@@ -91,14 +98,14 @@ If `Spacegame.ps1` changes, regenerate the guide with:
 ```
 
 You begin in Sol with a small ship, limited resources, and no reputation. 
-Manage your `HP`, `FL`, `WT`, and `CD`, and move strategically.
+Manage your `Health`, `Fuel`, `Weight`, and `Credits`, and frack strategically.
 
 ***Go forth and frack.***
 
 
 ## Some extra tips for you, Readme-Reader:
 - Prune all but the latest save for each pilot by inputting Prune on the Load Menu.
-- Shield cells are auto-consumed when needed while fracking. Fuel cells are not. 
+- After installing the Shield Cell Auto-Injector, shield cells are auto-consumed when needed while fracking. Fuel cells are not.
 - Cryo-Skipping can be utilized to skip the "idle" fracking mechanic, at the risk of HP depleting before FL does or WT capacity is reached.
 - Use WT strategically to not 'bust' on a cryo-skip on riskier planets - just hope the juice is worth the squeeze.
 - Fracking uninhabited Dwarf-class planets in Sol can yield upgrades.
@@ -141,4 +148,67 @@ Manage your `HP`, `FL`, `WT`, and `CD`, and move strategically.
       #==.-- ########%%########.-.@@@@#%##.+         
        ==%.--------:...:---=%##+--:##.#==            
 	                                           - PijiN
+```
+
+``` ASCII Spinning Drillbit Art
+@"
+@--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%\ 
+##/  ######/  ######/  ######/  ######/  #####\
+###   ######   ######   ######   ######   ####/
+%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%/ 
+"@,
+@"
+%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%\ 
+###/  ######/  ######/  ######/  ######/  ####\
+####   ######   ######   ######   ######   ###/
+%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-*/ 
+"@,
+@"
+%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%\ 
+####/  ######/  ######/  ######/  ######/  ###\
+#####   ######   ######   ######   ######   ##/
+%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/"/ 
+"@,
+@"
+%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%\ 
+#####/  ######/  ######/  ######/  ######/  ##\
+######   ######   ######   ######   ######   #/
+-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/' 
+"@,
+@"
+%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%\ 
+######/  ######/  ######/  ######/  ######/  #\
+#######   ######   ######   ######   ######   /
+/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/ 
+"@,
+@"
+%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/\ 
+ ######/  ######/  ######/  ######/  ######/  \
+  ######   ######   ######   ######   ######  /
+_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%/ 
+"@,
+@"
+/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%-/\ 
+  ######/  ######/  ######/  ######/  ######/ \
+   ######   ######   ######   ######   ###### /
+%%_/%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%/ 
+"@,
+@"
+-/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%,\ 
+/  ######/  ######/  ######/  ######/  ######/\
+#   ######   ######   ######   ######   ######/
+%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%/ 
+"@,
+@"
+--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%. 
+#/  ######/  ######/  ######/  ######/  ######\
+##   ######   ######   ######   ######   #####/
+%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%/ 
+"@,
+@"
+%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%\ 
+##/  ######/  ######/  ######/  ######/  #####\
+###   ######   ######   ######   ######   ####/
+%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%%%%%_/-%%/ 
+"@
 ```
