@@ -2064,8 +2064,21 @@ function Read-SaveName {
     }
 }
 
+function Get-SaveDirectory {
+    return (Join-Path $env:APPDATA "spacefrack")
+}
+
+function Ensure-SaveDirectory {
+    $saveDir = Get-SaveDirectory
+    if (-not (Test-Path -LiteralPath $saveDir)) {
+        New-Item -ItemType Directory -Path $saveDir -Force | Out-Null
+    }
+    return $saveDir
+}
+
 function Get-SaveFiles {
-    @(Get-ChildItem -Path $env:APPDATA -Filter "spacegame_*.txt" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
+    $saveDir = Ensure-SaveDirectory
+    @(Get-ChildItem -Path $saveDir -Filter "spacegame_*.txt" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
 }
 
 function Get-SaveFileInfo {
@@ -2163,7 +2176,7 @@ function Save-Game {
 
     $timestamp = (Get-Date).ToString("ddMMyy-HHmmss")
     $saveFileName = "spacegame_$($global:Player.SaveName)_$timestamp.txt"
-    $savePath  = Join-Path $env:APPDATA $saveFileName
+    $savePath  = Join-Path (Ensure-SaveDirectory) $saveFileName
     $sysName   = if ($global:CurrentSolarSystem.ContainsKey("_Metadata") -and $global:CurrentSolarSystem._Metadata.Id) { $global:CurrentSolarSystem._Metadata.Id } else { "Sol" }
 
     $playerCopy = $global:Player.Clone()
@@ -4548,7 +4561,7 @@ function Show-MainMenu {
         '  /____/ .___/\__,_/\___/\___/_/   /_/ |_/_/  |_\____/_/ |_|  '
         '      /_/ '
     )
-    $asciiLogoColors = @("DarkCyan", "DarkBlue", "DarkGray", "Gray")
+    $asciiLogoColors = @("DarkCyan", "DarkBlue", "DarkGray")
     $asciiTextColors = @("DarkCyan", "Cyan", "White", "Gray", "Yellow", "DarkYellow", "Green")
     $mainMenuDrillColorPairs = @(
         @{ Bright = "Blue";    Dark = "DarkBlue" },
@@ -5027,7 +5040,7 @@ while ($true) {
 # 0.0.1 - 02/19/2026 - Added a better death screen. Added damage backgroundcolor flashes. Revised Buy/Sell/Inv: No longer returns upon every selection, can now select final item, items now list their rarity and effects.Replaced Get-HPColor with Get-PercentColor for dynamic scaling. 
 # 0.0.2 - 02/20/2026 - Added $HazardMaster and re-worked the HazardReasons and Prospect damage logic. Added buying from/selling to headers. Changed resources from 100to1000 collective value, and re-balanced prospecting. Trader restock time halved to 5min. Re-balanced
 # 0.0.3 - 06/27/2026 - Major update, lots not covered here... Added quest system. New resources and upgrades with hazard mitigation, hyperjumping, scanning planet composition, and more. Input/menus overhaul. Formatting changes/tweaks. Added Typhon-1B solar system with two new factions with more quests/upgrades.
-# 0.0.4 - 07/04/2026 - Another big one: Added decimal fuel handling across travel, refueling, XRF scanning, and fracking, with shared fuel formatting. Reworked trader restocks to use quarter-hour refresh timing, dynamic stock generation, and improved restock presentation. Added the Settings Menu, moving save/load/status report access there and adding pilot rename plus fracking animation settings. Improved save/load UX with full save-path messaging, cleaner load-menu notices, safer individual save deletion, and delete-all confirmation. Added save compatibility defaults for new player fields introduced in v0.0.4. Overhauled the fracking screen with animated ASCII drill headers, cursor repaint animation, adjustable drill speed, animation-off mode, planet/type/HZ display, and tick-synced FRACKING color changes. Added animated main-menu drill accent with randomized animation speed and color pairs. Changed fracking ticks to scheduled one-second deadlines so prospecting stays aligned with the game clock. Improved fracking logs, resource/damage summaries, cargo-full handling, auto-heal display, and session time tracking. Added total Time Fracked tracking to the player and Status Report. Gated automatic shield-cell use while fracking behind the new Shield Cell Auto-Injector upgrade, awarded from the Mars questline. Reworked the main header with aligned stat/date spacing, dark gray separators, and a simplified clock-only right side while fracking. Added rarity foreground/background rendering support, including green-background Consumable names in menus and logs. Improved Inventory use-message placement so item-use feedback appears inline with the cargo header. Reworked XRF8 scan output to use relative composition bars, cleaner layout, decimal fuel formatting, and readable low-percentage values. Added planet type color lookup and expanded colored planet/type/HZ presentation where relevant. Expanded and redistributed Sol resource tables and added new planet descriptions. Rebalanced Typhon with new resources, hazards, inward-scaling resource yields, and expanded FFF/Bastion questlines. Added helper routines for item effect text, refuel pricing, travel fuel cost, prospect ASCII rendering, rarity text rendering, duration formatting, and console repaint behavior. Added pre-flight console resize handling for packaged executable display differences. Accessibility / formatting tweaks. Added new Typhon resources, hazards, and quests; overhauled the system. Upgraded the main menu to utilize repaint and include animated button options and the inverted ASCII drill animation (also in varying color).  Added player attributes to track stats. 
+# 0.0.4 - 07/04/2026 - Another big one: Added decimal fuel handling across travel, refueling, XRF scanning, and fracking, with shared fuel formatting. Reworked trader restocks to use quarter-hour refresh timing, dynamic stock generation, and improved restock presentation. Added the Settings Menu, moving save/load/status report access there and adding pilot rename plus fracking animation settings. Improved save/load UX with full save-path messaging, cleaner load-menu notices, safer individual save deletion, and delete-all confirmation. Added save compatibility defaults for new player fields introduced in v0.0.4. Overhauled the fracking screen with animated ASCII drill headers, cursor repaint animation, adjustable drill speed, animation-off mode, planet/type/HZ display, and tick-synced FRACKING color changes. Added animated main-menu drill accent with randomized animation speed and color pairs. Changed fracking ticks to scheduled one-second deadlines so prospecting stays aligned with the game clock. Improved fracking logs, resource/damage summaries, cargo-full handling, auto-heal display, and session time tracking. Added total Time Fracked tracking to the player and Status Report. Gated automatic shield-cell use while fracking behind the new Shield Cell Auto-Injector upgrade, awarded from the Mars questline. Reworked the main header with aligned stat/date spacing, dark gray separators, and a simplified clock-only right side while fracking. Added rarity foreground/background rendering support, including green-background Consumable names in menus and logs. Improved Inventory use-message placement so item-use feedback appears inline with the cargo header. Reworked XRF8 scan output to use relative composition bars, cleaner layout, decimal fuel formatting, and readable low-percentage values. Added planet type color lookup and expanded colored planet/type/HZ presentation where relevant. Expanded and redistributed Sol resource tables and added new planet descriptions. Rebalanced Typhon with new resources, hazards, inward-scaling resource yields, and expanded FFF/Bastion questlines. Added helper routines for item effect text, refuel pricing, travel fuel cost, prospect ASCII rendering, rarity text rendering, duration formatting, and console repaint behavior. Added pre-flight console resize handling for packaged executable display differences. Accessibility / formatting tweaks. Added new Typhon resources, hazards, and quests; overhauled the system. Upgraded the main menu to utilize repaint and include animated button options and the inverted ASCII drill animation (also in varying color).  Added player attributes to track stats. Moved save files into `%APPDATA%\spacefrack`, creating the directory on demand.
 
 <#
                       ..-%@@@@%-.:                   
