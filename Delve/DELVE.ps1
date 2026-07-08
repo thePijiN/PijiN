@@ -13,13 +13,14 @@
 
     Target: Windows PowerShell 5.1, best viewed in a terminal at least
     100 columns by 35 rows (Windows Terminal default works well).
+
 #>
 
 # ============================================================================
 #  CONSTANTS
 # ============================================================================
 
-$Global:GameVersion   = "1.0.1"
+$Global:GameVersion   = "1.0.2"
 $Global:MapWidth       = 70
 $Global:MapHeight      = 20
 $Global:MaxFloor       = 20
@@ -56,18 +57,18 @@ $Global:ClassMaster = [ordered]@{
         BaseMaxHP = 22; BaseAttack = 7; BaseDefense = 2; BaseCrit = 0.15; BaseDodge = 0.10
         StartWeapon = "Rusty Dagger"; StartArmor = "Traveler's Cloak"; StartTrinket = $null
         StartItems = @{ "Minor Health Potion" = 1; "Scroll of Teleport" = 1 }
-        AbilityName = "Shadowstep"; AbilityCooldown = 7
-        AbilityDesc = "Blink to a safer tile and guarantee your next strike crits."
-        UnlockCost = 40
+        AbilityName = "Dodge Roll"; AbilityCooldown = 7
+        AbilityDesc = "Roll up to three tiles in your last movement direction and guarantee your next strike crits."
+        UnlockCost = 250
         Blurb = "Fast, fragile, and allergic to a fair fight. Senses nearby traps."
     }
-    "Warden" = @{
+    "Mage" = @{
         BaseMaxHP = 20; BaseAttack = 5; BaseDefense = 2; BaseCrit = 0.08; BaseDodge = 0.05
-        StartWeapon = "Apprentice Staff"; StartArmor = "Apprentice Robe"; StartTrinket = $null
+        StartWeapon = "Quarter Staff"; StartArmor = "Apprentice Robe"; StartTrinket = $null
         StartItems = @{ "Minor Health Potion" = 1; "Scroll of Fireball" = 1 }
         AbilityName = "Arcane Bolt"; AbilityCooldown = 3
         AbilityDesc = "Hurl a bolt of force at a foe up to five tiles away."
-        UnlockCost = 70
+        UnlockCost = 500
         Blurb = "Weak in melee, dangerous at range. Never learned to swing a sword."
     }
 }
@@ -78,43 +79,48 @@ $Global:ClassMaster = [ordered]@{
 
 $Global:ItemMaster = [ordered]@{
     # --- Potions ---
-    "Minor Health Potion"  = @{ Type="Potion"; Effect="Heal"; EffectValue=12; Value=8;  Rarity="Common";   Symbol="!"; Color="Magenta"; Description="A weak but reliable restorative brew." }
-    "Health Potion"        = @{ Type="Potion"; Effect="Heal"; EffectValue=25; Value=18; Rarity="Uncommon"; Symbol="!"; Color="Magenta"; Description="A proper healer's draught." }
-    "Greater Health Potion"= @{ Type="Potion"; Effect="Heal"; EffectValue=50; Value=35; Rarity="Rare";     Symbol="!"; Color="Magenta"; Description="Thick, glowing, faintly unnerving. Heals deeply." }
-    "Antidote"             = @{ Type="Potion"; Effect="CurePoison"; Value=6;  Rarity="Common";   Symbol="!"; Color="Green";   Description="Neutralizes venom and creeping toxins." }
-    "Potion of Strength"   = @{ Type="Potion"; Effect="BuffAtk"; EffectValue=1; Value=50; Rarity="Rare"; Symbol="!"; Color="Red";     Description="Permanently hardens muscle and resolve. +1 Attack." }
-    "Potion of Fortitude"  = @{ Type="Potion"; Effect="BuffDef"; EffectValue=1; Value=50; Rarity="Rare"; Symbol="!"; Color="Cyan";    Description="Permanently thickens hide and nerve. +1 Defense." }
-    "Potion of Vitality"   = @{ Type="Potion"; Effect="BuffMaxHP"; EffectValue=8; Value=55; Rarity="Rare"; Symbol="!"; Color="Yellow"; Description="Permanently deepens your well of life. +8 Max HP." }
+    "Minor Health Potion"  = @{ Type="Potion"; Effect="Heal"; EffectValue=12; Value=8;  Rarity="Potion"; Symbol="!"; Color="Green"; Description="A weak but reliable restorative brew." }
+    "Health Potion"        = @{ Type="Potion"; Effect="Heal"; EffectValue=25; Value=18; Rarity="Potion"; Symbol="!"; Color="Green"; Description="A proper healer's draught." }
+    "Greater Health Potion"= @{ Type="Potion"; Effect="Heal"; EffectValue=50; Value=35; Rarity="Potion"; Symbol="!"; Color="DarkGreen"; Description="Thick, glowing, faintly unnerving. Heals deeply." }
+    "Antidote"             = @{ Type="Potion"; Effect="CurePoison"; Value=6;  Rarity="Potion"; Symbol="!"; Color="Magenta";   Description="Neutralizes venom and creeping toxins." }
+    "Potion of Strength"   = @{ Type="Potion"; Effect="BuffAtk"; EffectValue=1; Value=50; Rarity="PotentPotion"; Symbol="!"; Color="Red";     Description="Permanently hardens muscle and resolve. +1 Attack." }
+    "Potion of Fortitude"  = @{ Type="Potion"; Effect="BuffDef"; EffectValue=1; Value=50; Rarity="PotentPotion"; Symbol="!"; Color="Cyan";    Description="Permanently thickens hide and nerve. +1 Defense." }
+    "Potion of Vitality"   = @{ Type="Potion"; Effect="BuffMaxHP"; EffectValue=8; Value=55; Rarity="PotentPotion"; Symbol="!"; Color="Yellow"; Description="Permanently deepens your well of life. +8 Max HP." }
 
     # --- Scrolls ---
-    "Scroll of Teleport"    = @{ Type="Scroll"; Effect="Teleport"; Value=15; Rarity="Uncommon"; Symbol="?"; Color="Cyan";  Description="Folds space just enough to get you out of trouble." }
-    "Scroll of Fireball"    = @{ Type="Scroll"; Effect="Fireball"; Value=25; Rarity="Rare";     Symbol="?"; Color="Red";   Description="Engulfs nearby foes in sudden, ugly fire." }
-    "Scroll of Warding"     = @{ Type="Scroll"; Effect="Warding"; EffectValue=5; Value=20; Rarity="Uncommon"; Symbol="?"; Color="Yellow"; Description="Wraps you in a shimmer that turns aside blows. +5 Defense, 10 turns." }
-    "Scroll of Revelation"  = @{ Type="Scroll"; Effect="Revelation"; Value=20; Rarity="Uncommon"; Symbol="?"; Color="White"; Description="Lays the whole floor bare to your mind's eye." }
+    "Scroll of Teleport"    = @{ Type="Scroll"; Effect="Teleport"; Value=15; Rarity="Scroll"; Symbol="?"; Color="Cyan";  Description="Folds space just enough to get you out of trouble." }
+    "Scroll of Fireball"    = @{ Type="Scroll"; Effect="Fireball"; Value=25; Rarity="Scroll"; Symbol="?"; Color="Red";   Description="Engulfs nearby foes in sudden, ugly fire." }
+    "Scroll of Warding"     = @{ Type="Scroll"; Effect="Warding"; EffectValue=5; Value=20; Rarity="Scroll"; Symbol="?"; Color="Yellow"; Description="Wraps you in a shimmer that turns aside blows. +5 Defense, 10 turns." }
+    "Scroll of Revelation"  = @{ Type="Scroll"; Effect="Revelation"; Value=20; Rarity="Scroll"; Symbol="?"; Color="White"; Description="Lays the whole floor bare to your mind's eye." }
 
     # --- Weapons ---
     "Rusty Dagger"   = @{ Type="Weapon"; Value=10; Rarity="Common";   Symbol="/"; Color="Gray";   Description="Small, quick, and none too sharp."; AtkBonus=2 }
+	"Hatchet"        = @{ Type="Weapon"; Value=15; Rarity="Common";   Symbol="/"; Color="Gray";   Description="Standard contractor-issue steel."; AtkBonus=2; CritBonus=0.07 }
+	"Quarter Staff"  = @{ Type="Weapon"; Value=25; Rarity="Common";   Symbol="/"; Color="Cyan";   Description="Channels just enough force to matter."; AtkBonus=2; CritBonus=0.25 }
     "Short Sword"    = @{ Type="Weapon"; Value=20; Rarity="Common";   Symbol="/"; Color="Gray";   Description="Standard contractor-issue steel."; AtkBonus=3 }
+	"Flanged mace"   = @{ Type="Weapon"; Value=30; Rarity="Uncommon"; Symbol="/"; Color="White";  Description="A sturdy steel flanged mace."; AtkBonus=4 }
     "War Axe"        = @{ Type="Weapon"; Value=45; Rarity="Uncommon"; Symbol="/"; Color="White";  Description="Heavy, brutal, satisfying."; AtkBonus=5 }
-    "Apprentice Staff" = @{ Type="Weapon"; Value=25; Rarity="Common"; Symbol="/"; Color="Cyan";   Description="Channels just enough force to matter."; AtkBonus=2 }
-    "Rapier"         = @{ Type="Weapon"; Value=55; Rarity="Rare";     Symbol="/"; Color="Yellow"; Description="Elegant. Finds the gaps in armor."; AtkBonus=4; CritBonus=0.05 }
-    "Shadowblade"    = @{ Type="Weapon"; Value=90; Rarity="Rare";     Symbol="/"; Color="DarkGray";Description="Drinks light instead of reflecting it."; AtkBonus=6; CritBonus=0.10 }
-    "Warhammer"      = @{ Type="Weapon"; Value=100;Rarity="Rare";     Symbol="/"; Color="White";  Description="Slow to swing. Unpleasant to be hit by."; AtkBonus=8; DodgeBonus=-0.02 }
+    "Longsword"      = @{ Type="Weapon"; Value=60; Rarity="Uncommon"; Symbol="/"; Color="White";  Description="Standard two-handed steel sword."; AtkBonus=6 }
+	"Maul"           = @{ Type="Weapon"; Value=50; Rarity="Uncommon"; Symbol="/"; Color="White";  Description="Heavy and slow, but devastating."; AtkBonus=8; CritBonus=0.05; DodgeBonus=-0.33; DefBonus=-2}
+    "Rapier"         = @{ Type="Weapon"; Value=55; Rarity="Rare";     Symbol="/"; Color="Yellow"; Description="Finds the gaps in armor."; AtkBonus=4; CritBonus=0.10 }
+    "Estoc"          = @{ Type="Weapon"; Value=90; Rarity="Rare";     Symbol="/"; Color="DarkGray";Description="A dueling sword designed for stabbing."; AtkBonus=6; CritBonus=0.10 }
+    "Warhammer"      = @{ Type="Weapon"; Value=100;Rarity="Rare";     Symbol="/"; Color="White";  Description="Capable of crushing or piercing foes."; AtkBonus=7; DodgeBonus=-0.05 }
 
     # --- Armor ---
     "Leather Armor"    = @{ Type="Armor"; Value=15; Rarity="Common";   Symbol="["; Color="DarkYellow"; Description="Broken in. Smells like the last owner."; DefBonus=2 }
     "Traveler's Cloak" = @{ Type="Armor"; Value=20; Rarity="Common";   Symbol="["; Color="DarkGray";   Description="Light enough to run in."; DefBonus=1; DodgeBonus=0.03 }
-    "Chainmail"        = @{ Type="Armor"; Value=40; Rarity="Uncommon"; Symbol="["; Color="Gray";       Description="Heavy, loud, dependable."; DefBonus=4 }
+	"Brigandine"       = @{ Type="Armor"; Value=40; Rarity="Uncommon"; Symbol="["; Color="Gray";       Description="Like a guard's, but with no ensignia."; DefBonus=4 }
+	"Chainmail"        = @{ Type="Armor"; Value=40; Rarity="Uncommon"; Symbol="["; Color="Gray";       Description="Heavy, loud, dependable."; DefBonus=5 }
     "Apprentice Robe"  = @{ Type="Armor"; Value=30; Rarity="Common";   Symbol="["; Color="Cyan";       Description="Warded cloth, more than it looks."; DefBonus=1; MaxHPBonus=5 }
-    "Plate Armor"      = @{ Type="Armor"; Value=90; Rarity="Rare";     Symbol="["; Color="White";      Description="Nearly a small building. Very slow."; DefBonus=7; DodgeBonus=-0.02 }
+    "Plate Armor"      = @{ Type="Armor"; Value=90; Rarity="Rare";     Symbol="["; Color="White";      Description="Nearly a small building. Very slow."; DefBonus=7; DodgeBonus=-0.10 }
     "Shadow Cloak"     = @{ Type="Armor"; Value=70; Rarity="Rare";     Symbol="["; Color="DarkGray";   Description="Seems to bend the eye away from you."; DefBonus=3; DodgeBonus=0.05 }
 
     # --- Trinkets ---
     "Lucky Coin"       = @{ Type="Trinket"; Value=35; Rarity="Uncommon"; Symbol="*"; Color="Yellow"; Description="Worn smooth by nervous thumbs."; CritBonus=0.05 }
     "Amulet of Vigor"  = @{ Type="Trinket"; Value=40; Rarity="Uncommon"; Symbol="*"; Color="Red";    Description="Fortifies constitution."; MaxHPBonus=8 }
-    "Ring of Greed"    = @{ Type="Trinket"; Value=45; Rarity="Uncommon"; Symbol="*"; Color="Yellow"; Description="It wants you to be rich."; GoldBonusPct=0.15 }
-    "Charm of Warding" = @{ Type="Trinket"; Value=35; Rarity="Uncommon"; Symbol="*"; Color="Cyan";   Description="Hums faintly when danger is near."; DefBonus=2 }
-    "Emberheart"       = @{ Type="Trinket"; Value=45; Rarity="Uncommon"; Symbol="*"; Color="Red";    Description="A coal that never quite goes cold."; AtkBonus=2; OnHitBurnChance=0.15; OnHitBurnPower=4; OnHitBurnDuration=3 }
+    "Ring of Greed"    = @{ Type="Trinket"; Value=45; Rarity="Uncommon"; Symbol="*"; Color="Yellow"; Description="It wants you to be rich."; GoldBonusPct=0.10 }
+    "Charm of Warding" = @{ Type="Trinket"; Value=35; Rarity="Uncommon"; Symbol="*"; Color="Cyan";   Description="Hums faintly when danger is near."; DefBonus=3 }
+    "Emberheart"       = @{ Type="Trinket"; Value=45; Rarity="Uncommon"; Symbol="*"; Color="Red";    Description="A coal that never goes cold."; AtkBonus=1; OnHitBurnChance=0.25; OnHitBurnPower=4; OnHitBurnDuration=3 }
 
     # --- Special (not sold, meta-unlock only) ---
     "Phoenix Plume" = @{ Type="Special"; Value=0; Rarity="Artifact"; Symbol="*"; Color="Yellow"; Description="One more chance than you deserved."; Effect="PhoenixRevive" }
@@ -145,14 +151,14 @@ $Global:MonsterMaster = [ordered]@{
     "Wraith"          = @{ Symbol="w"; Color="Cyan";       BaseHP=16; BaseAtk=8;  BaseDef=2; XP=20; GoldMin=5;  GoldMax=12; MinFloor=6; MaxFloor=20; SpecialType="StatMod"; SpecialChance=0.30; SpecialDuration=4; SpecialDefMod=-3 }
     "Deep One"        = @{ Symbol="d"; Color="Blue";       BaseHP=26; BaseAtk=8;  BaseDef=4; XP=24; GoldMin=8;  GoldMax=15; MinFloor=7; MaxFloor=20 }
     "Stone Golem"     = @{ Symbol="G"; Color="Gray";       BaseHP=35; BaseAtk=9;  BaseDef=6; XP=28; GoldMin=8;  GoldMax=16; MinFloor=8; MaxFloor=20 }
-    "Shadow Assassin" = @{ Symbol=","; Color="DarkGray";   BaseHP=18; BaseAtk=10; BaseDef=2; XP=26; GoldMin=10; GoldMax=18; MinFloor=9; MaxFloor=20; SpecialType="Crit"; SpecialChance=0.25 }
+    "Assassin"        = @{ Symbol=","; Color="DarkGray";   BaseHP=18; BaseAtk=10; BaseDef=2; XP=26; GoldMin=10; GoldMax=18; MinFloor=9; MaxFloor=20; SpecialType="Crit"; SpecialChance=0.25 }
 }
 
 $Global:BossMaster = @{
     5  = @{ Name="The Bloated Maw";            Symbol="M"; Color="Red";     BaseHP=70;  BaseAtk=9;  BaseDef=3;  XP=90;  GoldMin=50;  GoldMax=80;  SpecialType="Poison";  SpecialChance=0.20; SpecialPower=3; SpecialDuration=3 }
     10 = @{ Name="Karrgoth, Orc Warlord";      Symbol="O"; Color="DarkRed"; BaseHP=130; BaseAtk=15; BaseDef=6;  XP=200; GoldMin=90;  GoldMax=140 }
     15 = @{ Name="The Hollow Wraith King";     Symbol="W"; Color="Cyan";    BaseHP=190; BaseAtk=19; BaseDef=8;  XP=340; GoldMin=150; GoldMax=220; SpecialType="StatMod"; SpecialChance=0.30; SpecialDuration=4; SpecialDefMod=-3 }
-    20 = @{ Name="Malphestus, the Deep Warden"; Symbol="D"; Color="Magenta";BaseHP=280; BaseAtk=25; BaseDef=10; XP=650; GoldMin=300; GoldMax=450; SpecialType="Burn"; SpecialChance=0.25; SpecialPower=5; SpecialDuration=3; Enrage=$true }
+    20 = @{ Name="Malphestus, the Deep Warden"; Symbol="D"; Color="Magenta"; BaseHP=280; BaseAtk=25; BaseDef=10; XP=650; GoldMin=300; GoldMax=450; SpecialType="Burn"; SpecialChance=0.25; SpecialPower=5; SpecialDuration=3; Enrage=$true }
 }
 
 # Fill in default fields for monsters and bosses.
@@ -182,7 +188,7 @@ foreach ($__key in @($Global:BossMaster.Keys)) {
 
 $Global:PerkMaster = [ordered]@{
     "UnlockRogue"    = @{ Name="Unlock Rogue Class";              Cost=250;  Type="ClassUnlock"; Target="Rogue";  Desc="Fast, crit-fueled, allergic to armor." }
-    "UnlockWarden"   = @{ Name="Unlock Warden Class";             Cost=500;  Type="ClassUnlock"; Target="Warden"; Desc="Ranged bolts, thin skin." }
+    "UnlockMage"   = @{ Name="Unlock Mage Class";                 Cost=500;  Type="ClassUnlock"; Target="Mage"; Desc="Ranged bolts, thin skin." }
     "VigorTraining"  = @{ Name="Vigor Training";                  Cost=1000;  Type="StatPerk"; Desc="+10 starting Max HP, permanently, on every class." }
     "CombatTraining" = @{ Name="Combat Training";                 Cost=1000;  Type="StatPerk"; Desc="+2 starting Attack, permanently, on every class." }
     "IronSkin"       = @{ Name="Iron Skin";                       Cost=1000;  Type="StatPerk"; Desc="+2 starting Defense, permanently, on every class." }
@@ -276,9 +282,35 @@ function Get-RarityColor {
         "Common"   { return "Gray" }
         "Uncommon" { return "Green" }
         "Rare"     { return "Cyan" }
-        "Artifact" { return "Yellow" }
+        "Artifact" { return "DarkYellow" }
+        "Potion"   { return "Magenta" }
+        "PotentPotion" { return "DarkMagenta" }
+        "Scroll"   { return "Yellow" }
         default    { return "White" }
     }
+}
+
+function Get-ClassUnlockCost {
+    param([string]$ClassName)
+    foreach ($pk in @($Global:PerkMaster.Keys)) {
+        $pd = $Global:PerkMaster[$pk]
+        if ($pd.Type -eq "ClassUnlock" -and $pd.Target -eq $ClassName) { return $pd.Cost }
+    }
+    if ($Global:ClassMaster.Contains($ClassName)) { return $Global:ClassMaster[$ClassName].UnlockCost }
+    return 0
+}
+
+function Test-ClassUnlocked {
+    param([string]$ClassName)
+    if (-not $Global:ClassMaster.Contains($ClassName)) { return $false }
+    $cDef = $Global:ClassMaster[$ClassName]
+    if ($cDef.UnlockCost -eq 0) { return $true }
+    if (-not $Global:Meta -or -not $Global:Meta.ContainsKey('Unlocked')) { return $false }
+    foreach ($pk in @($Global:PerkMaster.Keys)) {
+        $pd = $Global:PerkMaster[$pk]
+        if ($pd.Type -eq "ClassUnlock" -and $pd.Target -eq $ClassName -and $Global:Meta.Unlocked[$pk]) { return $true }
+    }
+    return $false
 }
 
 function Get-StatusEffectLabel {
@@ -322,6 +354,7 @@ function Get-DefaultMeta {
             TotalRuns      = 0
             TotalDeaths    = 0
             TotalVictories = 0
+            TotalAbandons  = 0
             BestFloor      = 0
             TotalKills     = 0
             TotalGoldEver  = 0
@@ -392,6 +425,13 @@ function Import-Run {
         if (-not $p.ContainsKey('Equipment') -or $null -eq $p.Equipment) { $p.Equipment = @{ Weapon=$null; Armor=$null; Trinket=$null } }
         $p.StatusEffects = @()
         $p.AbilityCooldown = 0
+        if ($Global:ClassMaster.Contains($p.Class)) {
+            $classDef = $Global:ClassMaster[$p.Class]
+            $p.AbilityName = $classDef.AbilityName
+            $p.AbilityMaxCooldown = $classDef.AbilityCooldown
+        }
+        if (-not $p.ContainsKey('LastMoveDX')) { $p.LastMoveDX = 0 }
+        if (-not $p.ContainsKey('LastMoveDY')) { $p.LastMoveDY = 0 }
         $p.GuaranteedCrit = $false
         $p.Victorious = $false
         return $p
@@ -456,6 +496,8 @@ function New-Player {
         DeepestFloor = 1
         Alive = $true
         Victorious = $false
+        LastMoveDX = 0
+        LastMoveDY = 0
         GuaranteedCrit = $false
     }
 
@@ -815,7 +857,7 @@ function Add-DungeonFeatures {
         if (-not $pos) { continue }
         $tile = $Global:Map["$($pos.X),$($pos.Y)"]
         if ($tile.Type -ne "Floor") { continue }
-        $amt = (Get-Random -Minimum 3 -Maximum 9) + ($FloorNum * 2)
+        $amt = (Get-Random -Minimum 3 -Maximum 8) + ($FloorNum * 1.5)
         $tile.Type = "Gold"
         $tile.GoldAmt = $amt
     }
@@ -865,6 +907,8 @@ function Add-DungeonFeatures {
         $tile.Type = "Trap"
         $tile.TrapType = Get-Random -InputObject $trapTypes
         $tile.Revealed = $false
+        $tile.Detected = $false
+        $tile.Triggered = $false
     }
 }
 
@@ -961,7 +1005,8 @@ function Update-Visibility {
                 $y = $PY + $dy
                 $key = "$x,$y"
                 if ($Global:Map.ContainsKey($key) -and $Global:Map[$key].Type -eq "Trap") {
-                    $Global:Map[$key].Revealed = $true
+                    $Global:Map[$key].Discovered = $true
+                    $Global:Map[$key].Detected = $true
                 }
             }
         }
@@ -1115,7 +1160,7 @@ function Invoke-PlayerDeathCheck {
         $Global:Player.HP = [int][math]::Ceiling($Global:Player.MaxHP * 0.5)
         $Global:Player.StatusEffects = @()
         Update-DerivedStats -Actor $Global:Player
-        Add-Message "The Phoenix Down flares -- you're pulled back from the brink!" "Yellow"
+        Add-Message "The Phoenix Plume flares -- you're pulled back from the brink!" "Yellow"
         return
     }
     $Global:Player.Alive = $false
@@ -1227,7 +1272,7 @@ function Invoke-EndOfTurn {
 
 function Open-Chest {
     param($Tile)
-    $gold = (Get-Random -Minimum 10 -Maximum 31) + ($Global:Player.Floor * 5)
+    $gold = (Get-Random -Minimum 10 -Maximum 31) + ($Global:Player.Floor * 2)
     $bonus = Get-TrinketGoldBonus
     $gold = [int]([math]::Round($gold * (1 + $bonus)))
     $Global:Player.Gold += $gold
@@ -1251,6 +1296,8 @@ function Open-Chest {
 function Invoke-TrapTrigger {
     param($Tile)
     $Tile.Revealed = $true
+    $Tile.Detected = $true
+    $Tile.Triggered = $true
     switch ($Tile.TrapType) {
         "Spike" {
             $dmg = Get-Random -Minimum 4 -Maximum 12
@@ -1312,6 +1359,59 @@ function Visit-Shrine {
     }
 }
 
+function Invoke-PlayerTileEntry {
+    $tile = $Global:Map["$($Global:Player.X),$($Global:Player.Y)"]
+    if (-not $tile) { return }
+
+    switch ($tile.Type) {
+        "Gold" {
+            $bonus = Get-TrinketGoldBonus
+            $amt = [int]([math]::Round($tile.GoldAmt * (1 + $bonus)))
+            $Global:Player.Gold += $amt
+            $Global:Player.GoldCollected += $amt
+            Add-Message "You find $amt gold." "Yellow"
+            $tile.Type = "Floor"
+            break
+        }
+        "Item" {
+            $itemName = $tile.ItemName
+            Add-InventoryItem -PlayerRef $Global:Player -ItemName $itemName -Qty 1
+            Add-Message "You pick up: $itemName." "Cyan"
+            $tile.Type = "Floor"
+            break
+        }
+        "Chest" {
+            if (-not $tile.Opened) {
+                Open-Chest -Tile $tile
+                $tile.Opened = $true
+            }
+            break
+        }
+        "Trap" {
+            $isTriggered = ($tile.ContainsKey('Triggered') -and $tile.Triggered)
+            if (-not $isTriggered) {
+                Invoke-TrapTrigger -Tile $tile
+            } else {
+                Add-Message "You carefully step around the trap." "DarkGray"
+            }
+            break
+        }
+        "Shrine" {
+            if (-not $tile.Used) {
+                Visit-Shrine -Tile $tile
+            } else {
+                Add-Message "The shrine is quiet now." "DarkGray"
+            }
+            break
+        }
+        "Shop" {
+            Show-ShopMenu
+            break
+        }
+        default { }
+    }
+}
+
 function Move-Player {
     param([int]$DX, [int]$DY)
 
@@ -1341,54 +1441,9 @@ function Move-Player {
 
     $Global:Player.X = $nx
     $Global:Player.Y = $ny
-    $tile = $Global:Map["$nx,$ny"]
-
-    switch ($tile.Type) {
-        "Gold" {
-            $bonus = Get-TrinketGoldBonus
-            $amt = [int]([math]::Round($tile.GoldAmt * (1 + $bonus)))
-            $Global:Player.Gold += $amt
-            $Global:Player.GoldCollected += $amt
-            Add-Message "You find $amt gold." "Yellow"
-            $tile.Type = "Floor"
-            break
-        }
-        "Item" {
-            $itemName = $tile.ItemName
-            Add-InventoryItem -PlayerRef $Global:Player -ItemName $itemName -Qty 1
-            Add-Message "You pick up: $itemName." "Cyan"
-            $tile.Type = "Floor"
-            break
-        }
-        "Chest" {
-            if (-not $tile.Opened) {
-                Open-Chest -Tile $tile
-                $tile.Opened = $true
-            }
-            break
-        }
-        "Trap" {
-            if (-not $tile.Revealed) {
-                Invoke-TrapTrigger -Tile $tile
-            } else {
-                Add-Message "You carefully step around the trap." "DarkGray"
-            }
-            break
-        }
-        "Shrine" {
-            if (-not $tile.Used) {
-                Visit-Shrine -Tile $tile
-            } else {
-                Add-Message "The shrine is quiet now." "DarkGray"
-            }
-            break
-        }
-        "Shop" {
-            Show-ShopMenu
-            break
-        }
-        default { }
-    }
+    $Global:Player.LastMoveDX = $DX
+    $Global:Player.LastMoveDY = $DY
+    Invoke-PlayerTileEntry
 
     Update-Visibility -PX $Global:Player.X -PY $Global:Player.Y
     Invoke-EndOfTurn
@@ -1418,7 +1473,40 @@ function Invoke-StairsInteract {
     Start-NewFloor -FloorNum ($Global:Player.Floor + 1)
 }
 
+function Invoke-TileInteract {
+    $tile = $Global:Map["$($Global:Player.X),$($Global:Player.Y)"]
+    switch ($tile.Type) {
+        "Stairs" {
+            Invoke-StairsInteract
+            break
+        }
+        "Shop" {
+            Show-ShopMenu
+            break
+        }
+        "Shrine" {
+            if (-not $tile.Used) {
+                Visit-Shrine -Tile $tile
+                Invoke-EndOfTurn
+            } else {
+                Add-Message "The shrine is quiet now." "DarkGray"
+            }
+            break
+        }
+        default {
+            Add-Message "There is nothing to interact with right now." "DarkGray"
+            break
+        }
+    }
+}
+
 function Wait-Turn {
+    $tile = $Global:Map["$($Global:Player.X),$($Global:Player.Y)"]
+    if ($tile.Type -eq "Stairs") {
+        Invoke-StairsInteract
+        return
+    }
+
     if (Test-Stunned -Actor $Global:Player) {
         Add-Message "You're stunned and can't act." "Magenta"
     } else {
@@ -1458,32 +1546,42 @@ function Use-Ability {
             break
         }
         "Rogue" {
-            $candidates = @()
-            for ($radius = 1; $radius -le 5; $radius++) {
-                for ($dy = -$radius; $dy -le $radius; $dy++) {
-                    for ($dx = -$radius; $dx -le $radius; $dx++) {
-                        $nx = $Global:Player.X + $dx
-                        $ny = $Global:Player.Y + $dy
-                        if ((Test-Walkable -X $nx -Y $ny) -and (-not (Test-TileOccupiedByMonster -X $nx -Y $ny))) {
-                            $candidates += , @{ X = $nx; Y = $ny }
-                        }
-                    }
+            $dx = 0
+            $dy = 0
+            if ($Global:Player.ContainsKey('LastMoveDX')) { $dx = [int]$Global:Player.LastMoveDX }
+            if ($Global:Player.ContainsKey('LastMoveDY')) { $dy = [int]$Global:Player.LastMoveDY }
+
+            if ($dx -eq 0 -and $dy -eq 0) {
+                Add-Message "Move first, then roll." "DarkGray"
+                break
+            }
+
+            $landing = $null
+            for ($range = 1; $range -le 3; $range++) {
+                $nx = $Global:Player.X + ($dx * $range)
+                $ny = $Global:Player.Y + ($dy * $range)
+                if (-not (Test-Walkable -X $nx -Y $ny)) { break }
+                if (-not (Test-TileOccupiedByMonster -X $nx -Y $ny)) {
+                    $landing = @{ X = $nx; Y = $ny; Range = $range }
                 }
             }
-            if ($candidates.Count -gt 0) {
-                $pick = Get-Random -InputObject $candidates
-                $Global:Player.X = $pick.X
-                $Global:Player.Y = $pick.Y
-                Update-Visibility -PX $pick.X -PY $pick.Y
-                $Global:Player.GuaranteedCrit = $true
-                Add-Message "You shadowstep away, poised for a killing blow." "Cyan"
+
+            if ($landing) {
+                $Global:Player.X = $landing.X
+                $Global:Player.Y = $landing.Y
+                Invoke-PlayerTileEntry
+                Update-Visibility -PX $Global:Player.X -PY $Global:Player.Y
                 $used = $true
+                if ($Global:Player.Alive -and (-not $Global:Player.Victorious)) {
+                    $Global:Player.GuaranteedCrit = $true
+                    Add-Message "You roll and poise your weapon." "Cyan"
+                }
             } else {
-                Add-Message "There's nowhere safe to step." "DarkGray"
+                Add-Message "There is no room to roll." "DarkGray"
             }
             break
         }
-        "Warden" {
+        "Mage" {
             $target = $null
             $bestDist = 999
             foreach ($dir in @(@(1, 0), @(-1, 0), @(0, 1), @(0, -1))) {
@@ -1499,7 +1597,7 @@ function Use-Ability {
                 }
             }
             if ($target) {
-                $dmg = ($Global:Player.Attack * 1.5) + 3
+                $dmg = [int][math]::Round(($Global:Player.Attack * 1.5) + 3)
                 $target.HP -= $dmg
                 Add-Message "Arcane Bolt sears the $($target.Name) for $dmg damage!" "Yellow"
                 if ($target.HP -le 0) { Invoke-MonsterDeath -Monster $target }
@@ -1673,7 +1771,17 @@ function Get-TileRenderCell {
             return @{ Char = "?"; Color = "White" }
         }
         "Trap"   {
-            if ($tile.Revealed) { return @{ Char = "^"; Color = "Red" } }
+            if ($tile.ContainsKey('Triggered') -and $tile.Triggered) {
+                switch ($tile.TrapType) {
+                    "Spike"   { return @{ Char = "^"; Color = "Red" } }
+                    "Gas"     { return @{ Char = "^"; Color = "Green" } }
+                    "Pitfall" { return @{ Char = "^"; Color = "Gray" } }
+                    default   { return @{ Char = "^"; Color = "Red" } }
+                }
+            }
+            if (($tile.ContainsKey('Detected') -and $tile.Detected) -or ($tile.ContainsKey('Revealed') -and $tile.Revealed)) {
+                return @{ Char = "^"; Color = "DarkGray" }
+            }
             return @{ Char = "."; Color = "DarkGray" }
         }
         default  { return @{ Char = "."; Color = "DarkGray" } }
@@ -1714,6 +1822,8 @@ function Show-Header {
     }
     if ($statusText.Count -gt 0) {
         Write-Host ("Status: " + ($statusText -join ", ")) -ForegroundColor Magenta
+    } else {
+        Write-Host ""
     }
     Write-Host ("=" * 100) -ForegroundColor DarkGray
 }
@@ -1746,7 +1856,7 @@ function Show-MessageLog {
 
 function Show-Hints {
     Write-Host ("-" * 100) -ForegroundColor DarkGray
-    Write-Host "[Arrows/WASD] Move/Attack  [Enter] Stairs  [Space] Wait  [Q] Ability  [I] Inventory  [C] Character  [Esc] Menu" -ForegroundColor DarkGray
+    Write-Host "[Arrows/WASD] Move/Attack  [Enter] Interact  [Space] Wait/Stairs  [Q] Ability  [I] Inventory  [C] Character  [Esc] Menu" -ForegroundColor DarkGray
 }
 
 function Render-Screen {
@@ -1761,40 +1871,72 @@ function Render-Screen {
 #  MENUS: INVENTORY / CHARACTER
 # ============================================================================
 
-function Show-ItemActionMenu {
-    param([string]$ItemName)
+function Read-InventoryUseCount {
+    param([string]$ItemName, [int]$MaxQty)
+    if ($MaxQty -le 1) { return 1 }
+
+    while ($true) {
+        Write-Host "How many $ItemName to use? " -NoNewline -ForegroundColor DarkGray
+        Write-Host "(1-$MaxQty, blank cancels): " -NoNewline -ForegroundColor Yellow
+        $line = Read-MenuLine
+        if ($line.Trim() -eq "") { return 0 }
+
+        $count = 0
+        if ([int]::TryParse($line, [ref]$count) -and $count -ge 1 -and $count -le $MaxQty) {
+            return $count
+        }
+    }
+}
+
+function Read-InventoryActionConfirm {
+    param([string]$Action, [string]$TargetText)
+
+    Write-Host "Press " -NoNewline -ForegroundColor DarkGray
+    Write-Host "Enter" -NoNewline -ForegroundColor DarkYellow
+    Write-Host " to $Action $TargetText, " -NoNewline -ForegroundColor DarkGray
+    Write-Host "any other key" -NoNewline -ForegroundColor Yellow
+    Write-Host " to cancel..." -ForegroundColor DarkGray
+
+    $k = [System.Console]::ReadKey($true)
+    return ($k.Key -eq "Enter")
+}
+
+function Invoke-InventoryItemSelection {
+    param([string]$ItemName, [int]$Qty)
+
     $item = $Global:ItemMaster[$ItemName]
-    Clear-Host
-    Write-Host ("=" * 100) -ForegroundColor DarkGray
-    Write-Host $ItemName -ForegroundColor (Get-RarityColor -Rarity $item.Rarity)
-    Write-Host $item.Description -ForegroundColor Gray
-    Write-Host ("=" * 100) -ForegroundColor DarkGray
+    if (-not $item) { return }
 
     if ($item.Type -eq "Weapon" -or $item.Type -eq "Armor" -or $item.Type -eq "Trinket") {
-        Write-Host "[1] Equip   [E] Back" -ForegroundColor Yellow
-        Write-Host "> " -NoNewline -ForegroundColor Yellow
-        $line = Read-MenuLine
-        if ($line -eq "1") {
+        if (Read-InventoryActionConfirm -Action "equip" -TargetText $ItemName) {
             Set-EquipItem -PlayerRef $Global:Player -ItemName $ItemName
-            Wait-AnyKey
         }
-    } elseif ($item.Type -eq "Potion" -or $item.Type -eq "Scroll") {
-        Write-Host "[1] Use   [E] Back" -ForegroundColor Yellow
-        Write-Host "> " -NoNewline -ForegroundColor Yellow
-        $line = Read-MenuLine
-        if ($line -eq "1") {
+        return
+    }
+
+    if ($item.Type -eq "Potion" -or $item.Type -eq "Scroll") {
+        $useCount = Read-InventoryUseCount -ItemName $ItemName -MaxQty $Qty
+        if ($useCount -le 0) { return }
+
+        $targetText = $ItemName
+        if ($useCount -gt 1) { $targetText = "$useCount x $ItemName" }
+
+        if (-not (Read-InventoryActionConfirm -Action "use" -TargetText $targetText)) { return }
+
+        for ($i = 0; $i -lt $useCount; $i++) {
+            if ((Get-ItemCount -PlayerRef $Global:Player -ItemName $ItemName) -le 0) { break }
             $ok = Use-Item -ItemName $ItemName
             if ($ok) {
+                if ($Global:Player.Victorious) { break }
                 Invoke-EndOfTurn
-                Wait-AnyKey "Time passes... press any key."
-            } else {
-                Wait-AnyKey
+                if ((-not $Global:Player.Alive) -or $Global:Player.Victorious) { break }
             }
         }
-    } else {
-        Write-Host "There's nothing to do with this here." -ForegroundColor DarkGray
-        Wait-AnyKey
+        return
     }
+
+    Write-Host "There is nothing to do with $ItemName here." -ForegroundColor DarkGray
+    [void][System.Console]::ReadKey($true)
 }
 
 function Show-InventoryMenu {
@@ -1855,7 +1997,8 @@ function Show-InventoryMenu {
         if ([int]::TryParse($line, [ref]$idx)) {
             $idx = $idx - 1
             if ($idx -ge 0 -and $idx -lt $listing.Count) {
-                Show-ItemActionMenu -ItemName $listing[$idx].Name
+                Invoke-InventoryItemSelection -ItemName $listing[$idx].Name -Qty $listing[$idx].Qty
+                if ((-not $Global:Player.Alive) -or $Global:Player.Victorious) { return }
             }
         }
     }
@@ -2011,8 +2154,8 @@ function Show-HelpScreen {
         "Walking onto gold, items, and chests picks them up or opens them automatically.",
         "Shrines offer a risky blessing once per visit; shops let you buy and sell.",
         "",
-        "[Enter]  Use the stairs (only works while standing on them)",
-        "[Space]  Wait one turn in place",
+        "[Enter]  Interact with stairs, merchants, and shrines",
+        "[Space]  Wait one turn in place, or use stairs while standing on them",
         "[I]      Open your inventory (use potions/scrolls, equip gear)",
         "[Q]      Use your class ability",
         "[C]      View your character sheet",
@@ -2043,7 +2186,7 @@ function Show-PauseMenu {
         Write-Host "[1] Resume" -ForegroundColor Yellow
         Write-Host "[2] Help" -ForegroundColor Yellow
         Write-Host "[3] Save and Quit to Main Menu" -ForegroundColor Yellow
-        Write-Host "[4] Abandon Run (permadeath, no save)" -ForegroundColor Red
+        Write-Host "[4] Abandon Run (bank Echoes, remove save)" -ForegroundColor Red
         Write-Host "> " -NoNewline -ForegroundColor Yellow
         $line = Read-MenuLine
         switch ($line) {
@@ -2056,8 +2199,7 @@ function Show-PauseMenu {
                 break
             }
             "4" {
-                if (Read-YesNo "Really abandon this run? Progress on this run will be lost forever") {
-                    Remove-RunSave
+                if (Read-YesNo "Abandon this run, bank earned Echoes, and remove the save") {
                     $result = "Abandoned"
                     $done = $true
                 }
@@ -2082,17 +2224,36 @@ function Get-EchoesEarned {
     return [int]$echoes
 }
 
-function Show-DeathScreen {
-    $echoes = Get-EchoesEarned -Victory $false
+function Add-RunRewards {
+    param([string]$Outcome)
+
+    $victory = ($Outcome -eq "Victory")
+    $echoes = Get-EchoesEarned -Victory $victory
     $Global:Meta.Echoes += $echoes
     $Global:Meta.TotalEchoesEarned += $echoes
     $Global:Meta.Stats.TotalRuns += 1
-    $Global:Meta.Stats.TotalDeaths += 1
-    if ($Global:Player.DeepestFloor -gt $Global:Meta.Stats.BestFloor) { $Global:Meta.Stats.BestFloor = $Global:Player.DeepestFloor }
+    switch ($Outcome) {
+        "Death" { $Global:Meta.Stats.TotalDeaths += 1; break }
+        "Victory" { $Global:Meta.Stats.TotalVictories += 1; break }
+        "Abandoned" {
+            if (-not $Global:Meta.Stats.ContainsKey('TotalAbandons')) { $Global:Meta.Stats.TotalAbandons = 0 }
+            $Global:Meta.Stats.TotalAbandons += 1
+            break
+        }
+        default { }
+    }
+    if ($Global:Player.DeepestFloor -gt $Global:Meta.Stats.BestFloor) {
+        $Global:Meta.Stats.BestFloor = $Global:Player.DeepestFloor
+    }
     $Global:Meta.Stats.TotalKills += $Global:Player.KillCount
     $Global:Meta.Stats.TotalGoldEver += $Global:Player.GoldCollected
     Export-Meta
     Remove-RunSave
+    return $echoes
+}
+
+function Show-DeathScreen {
+    $echoes = Add-RunRewards -Outcome "Death"
 
     Clear-Host
     Write-Host ("=" * 100) -ForegroundColor DarkRed
@@ -2122,17 +2283,29 @@ function Show-DeathScreen {
     Wait-AnyKey "Press any key to return to the Sanctuary..."
 }
 
+function Show-AbandonScreen {
+    $echoes = Add-RunRewards -Outcome "Abandoned"
+
+    Clear-Host
+    Write-Host ("=" * 100) -ForegroundColor DarkYellow
+    Write-Host "RUN ABANDONED" -ForegroundColor Yellow
+    Write-Host ("=" * 100) -ForegroundColor DarkYellow
+    Write-Host ""
+    Write-Host "$($Global:Player.Name) the $($Global:Player.Class), Level $($Global:Player.Level)" -ForegroundColor Gray
+    Write-Host "Reached floor $($Global:Player.DeepestFloor) of $($Global:MaxFloor)" -ForegroundColor Gray
+    Write-Host "Turns survived: $($Global:Player.Turn)" -ForegroundColor Gray
+    Write-Host "Monsters slain: $($Global:Player.KillCount)" -ForegroundColor Gray
+    Write-Host "Gold collected: $($Global:Player.GoldCollected)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Echoes banked: $echoes" -ForegroundColor Yellow
+    Write-Host "Total Echoes available: $($Global:Meta.Echoes)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "The Delve keeps its secrets. Your earned Echoes remain." -ForegroundColor DarkGray
+    Wait-AnyKey "Press any key to return to the Sanctuary..."
+}
+
 function Show-VictoryScreen {
-    $echoes = Get-EchoesEarned -Victory $true
-    $Global:Meta.Echoes += $echoes
-    $Global:Meta.TotalEchoesEarned += $echoes
-    $Global:Meta.Stats.TotalRuns += 1
-    $Global:Meta.Stats.TotalVictories += 1
-    if ($Global:Player.Floor -gt $Global:Meta.Stats.BestFloor) { $Global:Meta.Stats.BestFloor = $Global:Player.Floor }
-    $Global:Meta.Stats.TotalKills += $Global:Player.KillCount
-    $Global:Meta.Stats.TotalGoldEver += $Global:Player.GoldCollected
-    Export-Meta
-    Remove-RunSave
+    $echoes = Add-RunRewards -Outcome "Victory"
 
     Clear-Host
     Write-Host ("=" * 100) -ForegroundColor Yellow
@@ -2177,8 +2350,8 @@ function Show-TitleScreen {
         Write-Host ("     " + $l) -ForegroundColor DarkGray
     }
     Write-Host "                                 v" -ForegroundColor DarkGray -NoNewLine
-	Write-Host "$($Global:GameVersion)" -ForegroundColor DarkYellow
-	Write-Host ""
+    Write-Host "$($Global:GameVersion)" -ForegroundColor DarkYellow
+    Write-Host ""
     Write-Host "A Roguelike Dungeon Crawl for Windows Terminal" -ForegroundColor Gray
     Write-Host ""
     Wait-AnyKey "Press any key to begin..."
@@ -2194,20 +2367,15 @@ function Show-ClassSelect {
         for ($i = 0; $i -lt $classNames.Count; $i++) {
             $cName = $classNames[$i]
             $cDef = $Global:ClassMaster[$cName]
-            $unlocked = ($cDef.UnlockCost -eq 0)
-            if (-not $unlocked) {
-                foreach ($pk in @($Global:PerkMaster.Keys)) {
-                    $pd = $Global:PerkMaster[$pk]
-                    if ($pd.Type -eq "ClassUnlock" -and $pd.Target -eq $cName -and $Global:Meta.Unlocked[$pk]) { $unlocked = $true }
-                }
-            }
+            $unlocked = Test-ClassUnlocked -ClassName $cName
             $num = $i + 1
             if ($unlocked) {
                 Write-Host "  [$num] $cName" -ForegroundColor Yellow
                 Write-Host "      $($cDef.Blurb)" -ForegroundColor Gray
                 Write-Host "      HP $($cDef.BaseMaxHP)  ATK $($cDef.BaseAttack)  DEF $($cDef.BaseDefense)  Ability: $($cDef.AbilityName)" -ForegroundColor DarkGray
             } else {
-                Write-Host "  [$num] $cName -- LOCKED (unlock at the Sanctuary, costs $($cDef.UnlockCost) Echoes)" -ForegroundColor DarkGray
+                $cost = Get-ClassUnlockCost -ClassName $cName
+                Write-Host "  [$num] $cName -- LOCKED (unlock at the Sanctuary, costs $cost Echoes)" -ForegroundColor DarkGray
             }
             Write-Host ""
         }
@@ -2220,21 +2388,24 @@ function Show-ClassSelect {
             $idx = $idx - 1
             if ($idx -ge 0 -and $idx -lt $classNames.Count) {
                 $cName = $classNames[$idx]
-                $cDef = $Global:ClassMaster[$cName]
-                $unlocked = ($cDef.UnlockCost -eq 0)
-                if (-not $unlocked) {
-                    foreach ($pk in @($Global:PerkMaster.Keys)) {
-                        $pd = $Global:PerkMaster[$pk]
-                        if ($pd.Type -eq "ClassUnlock" -and $pd.Target -eq $cName -and $Global:Meta.Unlocked[$pk]) { $unlocked = $true }
-                    }
-                }
-                if ($unlocked) { return $cName }
+                if (Test-ClassUnlocked -ClassName $cName) { return $cName }
             }
         }
     }
 }
 
 function Start-NewRun {
+    if (Test-RunSaveExists) {
+        Clear-Host
+        Write-Host ("=" * 70) -ForegroundColor DarkGray
+        Write-Host "  EXISTING SAVE FOUND" -ForegroundColor Yellow
+        Write-Host ("=" * 70) -ForegroundColor DarkGray
+        Write-Host ""
+        Write-Host "Starting a new run will remove the saved run." -ForegroundColor Gray
+        Write-Host ""
+        if (-not (Read-YesNo "Start a new run and delete the saved run")) { return }
+    }
+
     $className = Show-ClassSelect
     if (-not $className) { return }
 
@@ -2334,6 +2505,7 @@ function Show-Records {
     Write-Host "  Total runs:       $($s.TotalRuns)" -ForegroundColor Gray
     Write-Host "  Victories:        $($s.TotalVictories)" -ForegroundColor Gray
     Write-Host "  Deaths:           $($s.TotalDeaths)" -ForegroundColor Gray
+    Write-Host "  Abandoned:        $($s.TotalAbandons)" -ForegroundColor Gray
     Write-Host "  Best floor:       $($s.BestFloor) / $($Global:MaxFloor)" -ForegroundColor Gray
     Write-Host "  Total kills:      $($s.TotalKills)" -ForegroundColor Gray
     Write-Host "  Total gold ever:  $($s.TotalGoldEver)" -ForegroundColor Gray
@@ -2396,14 +2568,17 @@ function Start-GameLoop {
             "S" { Move-Player -DX 0 -DY 1; break }
             "A" { Move-Player -DX -1 -DY 0; break }
             "D" { Move-Player -DX 1 -DY 0; break }
-            "Enter" { Invoke-StairsInteract; break }
+            "Enter" { Invoke-TileInteract; break }
             "Spacebar" { Wait-Turn; break }
             "I" { Show-InventoryMenu; break }
             "Q" { Use-Ability; break }
             "C" { Show-CharacterSheet; break }
             "Escape" {
                 $res = Show-PauseMenu
-                if ($res -eq "QuitToMenu" -or $res -eq "Abandoned") {
+                if ($res -eq "Abandoned") {
+                    Show-AbandonScreen
+                    $Global:Player = $null
+                } elseif ($res -eq "QuitToMenu") {
                     $Global:Player = $null
                 }
                 break
@@ -2422,6 +2597,63 @@ function Start-GameLoop {
 }
 
 # ============================================================================
+#  PRE-FLIGHT: CONSOLE SIZING
+# ============================================================================
+# DELVE's full screen (header + 20-row map + message log + hint line) is
+# 34 lines tall and up to 100 columns wide. Many default console profiles
+# are shorter than that, which causes Clear-Host to visually "stack" old
+# frames instead of cleanly redrawing -- the window's viewport scrolls
+# down a little further each turn because the content doesn't fit, even
+# though each frame really is being drawn fresh into a cleared buffer.
+# This grows the window/buffer to fit, once, at startup. It only ever
+# grows (never shrinks) and only if the current size is already too
+# small, and every step is wrapped in try/catch: plenty of hosts (many
+# Windows Terminal profiles, VS Code's integrated terminal, the ISE)
+# don't support resizing at all or throw when asked, and this fails
+# silently in those cases -- the game still runs, just may need manual
+# resizing or scrolling in those specific hosts.
+
+$Global:DelveLayoutWidth = 102
+$Global:DelveLayoutHeight = 40
+
+function Resize-DelveConsole {
+    try {
+        $rawUi = $Host.UI.RawUI
+        if (-not $rawUi) { return }
+
+        $targetWidth = $Global:DelveLayoutWidth
+        $targetHeight = $Global:DelveLayoutHeight
+
+        $maxSize = $rawUi.MaxPhysicalWindowSize
+        if ($maxSize.Width -gt 0) { $targetWidth = [Math]::Min($targetWidth, $maxSize.Width) }
+        if ($maxSize.Height -gt 0) { $targetHeight = [Math]::Min($targetHeight, $maxSize.Height) }
+        if ($targetWidth -le 0 -or $targetHeight -le 0) { return }
+
+        # Buffer must be at least as large as the window before the window
+        # can grow, so grow the buffer first.
+        $bufferSize = $rawUi.BufferSize
+        $newBufferWidth = [Math]::Max($bufferSize.Width, $targetWidth)
+        $newBufferHeight = [Math]::Max($bufferSize.Height, $targetHeight)
+        if ($newBufferWidth -ne $bufferSize.Width -or $newBufferHeight -ne $bufferSize.Height) {
+            $bufferSize.Width = $newBufferWidth
+            $bufferSize.Height = $newBufferHeight
+            $rawUi.BufferSize = $bufferSize
+        }
+
+        $windowSize = $rawUi.WindowSize
+        $newWindowWidth = [Math]::Max($windowSize.Width, $targetWidth)
+        $newWindowHeight = [Math]::Max($windowSize.Height, $targetHeight)
+        if ($newWindowWidth -ne $windowSize.Width -or $newWindowHeight -ne $windowSize.Height) {
+            $windowSize.Width = $newWindowWidth
+            $windowSize.Height = $newWindowHeight
+            $rawUi.WindowSize = $windowSize
+        }
+    } catch {
+        # Resizing isn't supported here -- carry on at whatever size is available.
+    }
+}
+
+# ============================================================================
 #  ENTRY POINT
 # ============================================================================
 
@@ -2431,6 +2663,7 @@ try {
 } catch { }
 
 try {
+    Resize-DelveConsole
     try { $Host.UI.RawUI.WindowTitle = "DELVE" } catch { }
     try { [System.Console]::CursorVisible = $false } catch { }
 
@@ -2445,3 +2678,8 @@ try {
     try { [System.Console]::CursorVisible = $__origCursorVisible } catch { }
 }
 
+
+# CHANGELOG
+# 1.0.0 - 07/04/26
+# 1.0.1 - 07/05/26 - Bugfixes, balance and formatting changes. 
+# 1.0.2 - 07/07/26 - Locked class costs follow Sanctuary data; New Run confirms before replacing a save; Abandon Run banks earned Echoes without death credit. Reworked/added new items, added new rarities. Locked class costs follow Sanctuary data; New Run confirms before replacing a save; Abandon Run banks earned Echoes without death credit; inventory item use now confirms inline; Space uses stairs when standing on them; Enter reuses stairs, merchants, and shrines.
