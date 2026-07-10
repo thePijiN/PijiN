@@ -5,7 +5,7 @@
 
     Descend twenty procedurally generated floors, fight monsters, gather loot,
     and try to reach the bottom alive. Death is permanent within a run, but
-    every run earns Echoes -- a persistent currency spent at the Sanctuary to
+    every run earns Echoes - a persistent currency spent at the Sanctuary to
     unlock new classes and permanent perks for future attempts.
 
     Run it with:
@@ -20,7 +20,7 @@
 #  CONSTANTS
 # ============================================================================
 
-$Global:GameVersion   = "1.0.2"
+$Global:GameVersion   = "1.0.3"
 $Global:MapWidth       = 70
 $Global:MapHeight      = 20
 $Global:MaxFloor       = 20
@@ -38,6 +38,9 @@ $Global:Rooms      = @()
 $Global:Monsters   = @()
 $Global:Player     = $null
 $Global:Meta       = $null
+$Global:GameScreenNeedsClear = $true
+$Global:LastGameWindowWidth = 0
+$Global:LastGameWindowHeight = 0
 
 # ============================================================================
 #  DATA: CLASSES
@@ -66,7 +69,7 @@ $Global:ClassMaster = [ordered]@{
         BaseMaxHP = 20; BaseAttack = 5; BaseDefense = 2; BaseCrit = 0.08; BaseDodge = 0.05
         StartWeapon = "Quarter Staff"; StartArmor = "Apprentice Robe"; StartTrinket = $null
         StartItems = @{ "Minor Health Potion" = 1; "Scroll of Fireball" = 1 }
-        AbilityName = "Arcane Bolt"; AbilityCooldown = 3
+        AbilityName = "Arcane Bolt"; AbilityCooldown = 6
         AbilityDesc = "Hurl a bolt of force at a foe up to five tiles away."
         UnlockCost = 500
         Blurb = "Weak in melee, dangerous at range. Never learned to swing a sword."
@@ -79,10 +82,10 @@ $Global:ClassMaster = [ordered]@{
 
 $Global:ItemMaster = [ordered]@{
     # --- Potions ---
-    "Minor Health Potion"  = @{ Type="Potion"; Effect="Heal"; EffectValue=12; Value=8;  Rarity="Potion"; Symbol="!"; Color="Green"; Description="A weak but reliable restorative brew." }
-    "Health Potion"        = @{ Type="Potion"; Effect="Heal"; EffectValue=25; Value=18; Rarity="Potion"; Symbol="!"; Color="Green"; Description="A proper healer's draught." }
-    "Greater Health Potion"= @{ Type="Potion"; Effect="Heal"; EffectValue=50; Value=35; Rarity="Potion"; Symbol="!"; Color="DarkGreen"; Description="Thick, glowing, faintly unnerving. Heals deeply." }
-    "Antidote"             = @{ Type="Potion"; Effect="CurePoison"; Value=6;  Rarity="Potion"; Symbol="!"; Color="Magenta";   Description="Neutralizes venom and creeping toxins." }
+    "Minor Health Potion"  = @{ Type="Potion"; Effect="Heal"; EffectValue=12; Value=8;  Rarity="Potion"; Symbol="!"; Color="Magenta"; Description="A weak but reliable restorative brew." }
+    "Health Potion"        = @{ Type="Potion"; Effect="Heal"; EffectValue=25; Value=18; Rarity="Potion"; Symbol="!"; Color="Magenta"; Description="A proper healer's draught." }
+    "Greater Health Potion"= @{ Type="Potion"; Effect="Heal"; EffectValue=50; Value=35; Rarity="Potion"; Symbol="!"; Color="DarkMagenta"; Description="Thick, glowing, faintly unnerving. Heals deeply." }
+    "Antidote"             = @{ Type="Potion"; Effect="CurePoison"; Value=6;  Rarity="Potion"; Symbol="!"; Color="Green";   Description="Neutralizes venom and creeping toxins." }
     "Potion of Strength"   = @{ Type="Potion"; Effect="BuffAtk"; EffectValue=1; Value=50; Rarity="PotentPotion"; Symbol="!"; Color="Red";     Description="Permanently hardens muscle and resolve. +1 Attack." }
     "Potion of Fortitude"  = @{ Type="Potion"; Effect="BuffDef"; EffectValue=1; Value=50; Rarity="PotentPotion"; Symbol="!"; Color="Cyan";    Description="Permanently thickens hide and nerve. +1 Defense." }
     "Potion of Vitality"   = @{ Type="Potion"; Effect="BuffMaxHP"; EffectValue=8; Value=55; Rarity="PotentPotion"; Symbol="!"; Color="Yellow"; Description="Permanently deepens your well of life. +8 Max HP." }
@@ -264,18 +267,6 @@ function Get-HPColor {
     return "Red"
 }
 
-function Write-Bar {
-    param([double]$Current, [double]$Max, [int]$Width = 20, [string]$FullColor = "Green", [string]$EmptyColor = "DarkGray")
-    if ($Max -le 0) { $Max = 1 }
-    $pct = Get-Clamp -Value ($Current / $Max) -Min 0 -Max 1
-    $filled = [int][math]::Round($pct * $Width)
-    $empty = $Width - $filled
-    Write-Host "[" -NoNewline -ForegroundColor DarkGray
-    if ($filled -gt 0) { Write-Host ("#" * $filled) -NoNewline -ForegroundColor $FullColor }
-    if ($empty -gt 0) { Write-Host ("-" * $empty) -NoNewline -ForegroundColor $EmptyColor }
-    Write-Host "]" -NoNewline -ForegroundColor DarkGray
-}
-
 function Get-RarityColor {
     param([string]$Rarity)
     switch ($Rarity) {
@@ -327,6 +318,23 @@ function Get-StatusEffectLabel {
             return "Charmed"
         }
         default { return $Eff.Type }
+    }
+}
+
+function Get-StatusEffectColor {
+    param($Eff)
+    switch ($Eff.Type) {
+        "Poison" { return "Green" }
+        "Burn"   { return "Red" }
+        "Stun"   { return "Yellow" }
+        "StatMod" {
+            if ($Eff.DefMod -gt 0) { return "Cyan" }
+            if ($Eff.DefMod -lt 0) { return "Magenta" }
+            if ($Eff.AtkMod -gt 0) { return "Yellow" }
+            if ($Eff.AtkMod -lt 0) { return "Magenta" }
+            return "Magenta"
+        }
+        default { return "White" }
     }
 }
 
@@ -1418,7 +1426,7 @@ function Move-Player {
     if (Test-Stunned -Actor $Global:Player) {
         Add-Message "You're stunned and stumble in place!" "Magenta"
         Invoke-EndOfTurn
-        return
+        return $true
     }
 
     $nx = $Global:Player.X + $DX
@@ -1432,11 +1440,11 @@ function Move-Player {
     if ($targetMonster) {
         Resolve-PlayerAttack -Monster $targetMonster
         Invoke-EndOfTurn
-        return
+        return $true
     }
 
     if (-not (Test-Walkable -X $nx -Y $ny)) {
-        return
+        return $false
     }
 
     $Global:Player.X = $nx
@@ -1447,6 +1455,7 @@ function Move-Player {
 
     Update-Visibility -PX $Global:Player.X -PY $Global:Player.Y
     Invoke-EndOfTurn
+    return $true
 }
 
 function Invoke-StairsInteract {
@@ -1597,7 +1606,7 @@ function Use-Ability {
                 }
             }
             if ($target) {
-                $dmg = [int][math]::Round(($Global:Player.Attack * 1.5) + 3)
+                $dmg = [int][math]::Round(($Global:Player.Attack * 1.1) + 3)
                 $target.HP -= $dmg
                 Add-Message "Arcane Bolt sears the $($target.Name) for $dmg damage!" "Yellow"
                 if ($target.HP -le 0) { Invoke-MonsterDeath -Monster $target }
@@ -1721,150 +1730,281 @@ function Read-MenuLine {
     return (Read-Host)
 }
 
-function Write-ColorRuns {
-    param([array]$Cells)
-    if ($Cells.Count -eq 0) { Write-Host ""; return }
-    $curColor = $Cells[0].Color
-    $sb = New-Object System.Text.StringBuilder
-    [void]$sb.Append($Cells[0].Char)
-    for ($i = 1; $i -lt $Cells.Count; $i++) {
-        if ($Cells[$i].Color -eq $curColor) {
-            [void]$sb.Append($Cells[$i].Char)
-        } else {
-            Write-Host $sb.ToString() -NoNewline -ForegroundColor $curColor
-            $sb = New-Object System.Text.StringBuilder
-            [void]$sb.Append($Cells[$i].Char)
-            $curColor = $Cells[$i].Color
-        }
-    }
-    Write-Host $sb.ToString() -ForegroundColor $curColor
+$Global:GameFrameWidth = 100
+$Global:AnsiForegroundCodes = @{
+    Black = 30; DarkBlue = 34; DarkGreen = 32; DarkCyan = 36
+    DarkRed = 31; DarkMagenta = 35; DarkYellow = 33; Gray = 37
+    DarkGray = 90; Blue = 94; Green = 92; Cyan = 96
+    Red = 91; Magenta = 95; Yellow = 93; White = 97
 }
 
-function Get-TileRenderCell {
-    param([int]$X, [int]$Y)
-    if ($X -eq $Global:Player.X -and $Y -eq $Global:Player.Y) {
-        return @{ Char = "@"; Color = "White" }
+function Add-AnsiForeground {
+    param([System.Text.StringBuilder]$Builder, [string]$Color)
+    $code = 37
+    if ($Global:AnsiForegroundCodes.ContainsKey($Color)) {
+        $code = $Global:AnsiForegroundCodes[$Color]
     }
-    $tile = $Global:Map["$X,$Y"]
-    foreach ($m in $Global:Monsters) {
-        if ($m.Alive -and $m.X -eq $X -and $m.Y -eq $Y -and $tile.Discovered) {
-            return @{ Char = $m.Symbol; Color = $m.Color }
+    [void]$Builder.Append([char]27)
+    [void]$Builder.Append("[")
+    [void]$Builder.Append($code)
+    [void]$Builder.Append("m")
+}
+
+function Add-BufferedLine {
+    param(
+        [System.Text.StringBuilder]$Builder,
+        [array]$Runs,
+        [int]$Width = 100,
+        [switch]$NoNewline
+    )
+
+    $written = 0
+    foreach ($run in $Runs) {
+        if ($written -ge $Width) { break }
+        $text = [string]$run.Text
+        if ($text.Length -eq 0) { continue }
+        $remaining = $Width - $written
+        if ($text.Length -gt $remaining) {
+            $text = $text.Substring(0, $remaining)
         }
+        Add-AnsiForeground -Builder $Builder -Color ([string]$run.Color)
+        [void]$Builder.Append($text)
+        $written += $text.Length
     }
-    if (-not $tile.Discovered) {
-        return @{ Char = " "; Color = "Black" }
+
+    [void]$Builder.Append([char]27)
+    [void]$Builder.Append("[0m")
+    if ($written -lt $Width) {
+        [void]$Builder.Append(" " * ($Width - $written))
     }
-    switch ($tile.Type) {
-        "Wall"   { return @{ Char = "#"; Color = "DarkGray" } }
-        "Floor"  { return @{ Char = "."; Color = "DarkGray" } }
-        "Stairs" { return @{ Char = ">"; Color = "White" } }
-        "Shop"   { return @{ Char = "M"; Color = "Yellow" } }
-        "Shrine" { return @{ Char = "&"; Color = "Magenta" } }
-        "Chest"  {
-            if ($tile.Opened) { return @{ Char = "*"; Color = "DarkGray" } }
-            return @{ Char = "*"; Color = "Yellow" }
-        }
-        "Gold"   { return @{ Char = '$'; Color = "Yellow" } }
-        "Item"   {
-            $it = $Global:ItemMaster[$tile.ItemName]
-            if ($it) { return @{ Char = $it.Symbol; Color = $it.Color } }
-            return @{ Char = "?"; Color = "White" }
-        }
-        "Trap"   {
-            if ($tile.ContainsKey('Triggered') -and $tile.Triggered) {
-                switch ($tile.TrapType) {
-                    "Spike"   { return @{ Char = "^"; Color = "Red" } }
-                    "Gas"     { return @{ Char = "^"; Color = "Green" } }
-                    "Pitfall" { return @{ Char = "^"; Color = "Gray" } }
-                    default   { return @{ Char = "^"; Color = "Red" } }
-                }
-            }
-            if (($tile.ContainsKey('Detected') -and $tile.Detected) -or ($tile.ContainsKey('Revealed') -and $tile.Revealed)) {
-                return @{ Char = "^"; Color = "DarkGray" }
-            }
-            return @{ Char = "."; Color = "DarkGray" }
-        }
-        default  { return @{ Char = "."; Color = "DarkGray" } }
+    if (-not $NoNewline) {
+        [void]$Builder.Append("`r`n")
     }
 }
 
-function Show-Header {
+function Get-DungeonFrameWidth {
+    $width = $Global:GameFrameWidth
+    try {
+        $consoleWidth = [System.Console]::WindowWidth
+        if ($consoleWidth -gt 1) {
+            $width = [math]::Max($Global:MapWidth, [math]::Min($width, $consoleWidth - 1))
+        }
+    } catch { }
+    return $width
+}
+
+function Get-DungeonViewportHeight {
+    $height = 40
+    if ($Global:DelveLayoutHeight -gt 0) {
+        $height = $Global:DelveLayoutHeight
+    }
+    try {
+        $consoleHeight = [System.Console]::WindowHeight
+        if ($consoleHeight -gt 0) { $height = $consoleHeight }
+    } catch {
+        try {
+            $rawHeight = $Host.UI.RawUI.WindowSize.Height
+            if ($rawHeight -gt 0) { $height = $rawHeight }
+        } catch { }
+    }
+    return $height
+}
+
+function New-DungeonFrame {
+    param([int]$Width = 0, [int]$ViewportHeight = 0)
+
+    $width = $Width
+    if ($width -le 0) { $width = Get-DungeonFrameWidth }
+    if ($ViewportHeight -le 0) { $ViewportHeight = Get-DungeonViewportHeight }
     $p = $Global:Player
-    Write-Host ("=" * 100) -ForegroundColor DarkGray
-    Write-Host "DELVE" -NoNewline -ForegroundColor White
-    Write-Host "  " -NoNewline
-    Write-Host "$($p.Name)" -NoNewline -ForegroundColor Cyan
-    Write-Host " the $($p.Class)" -NoNewline -ForegroundColor Cyan
-    Write-Host "   Lv $($p.Level)" -NoNewline -ForegroundColor Yellow
-    Write-Host "   Floor $($p.Floor)/$($Global:MaxFloor)" -NoNewline -ForegroundColor White
-    Write-Host "   Turn $($p.Turn)" -ForegroundColor DarkGray
+    $frame = New-Object System.Text.StringBuilder -ArgumentList 8192
 
-    Write-Host "HP " -NoNewline -ForegroundColor Gray
-    Write-Bar -Current $p.HP -Max $p.MaxHP -Width 20 -FullColor (Get-HPColor -Current $p.HP -Max $p.MaxHP)
-    Write-Host (" {0}/{1}" -f [int]$p.HP, [int]$p.MaxHP) -NoNewline -ForegroundColor White
-    Write-Host "   ATK $($p.Attack)" -NoNewline -ForegroundColor Red
-    Write-Host "   DEF $($p.Defense)" -NoNewline -ForegroundColor Cyan
-    Write-Host "   CRIT $([int]($p.Crit * 100))%" -NoNewline -ForegroundColor Yellow
-    Write-Host "   DODGE $([int]($p.Dodge * 100))%" -ForegroundColor Green
+    [void]$frame.Append([char]27)
+    [void]$frame.Append("[H")
 
-    Write-Host "XP " -NoNewline -ForegroundColor Gray
-    Write-Bar -Current $p.XP -Max $p.XPToNext -Width 20 -FullColor "Magenta"
-    Write-Host (" {0}/{1}" -f $p.XP, $p.XPToNext) -NoNewline -ForegroundColor White
-    Write-Host "   Gold $($p.Gold)" -NoNewline -ForegroundColor Yellow
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = ("=" * $width); Color = "DarkGray" }
+    )
+    $titleRuns = @(
+        @{ Text = "DELVE"; Color = "White" }
+        @{ Text = "  $($p.Name) the $($p.Class)"; Color = "Cyan" }
+        @{ Text = "   Lv $($p.Level)"; Color = "Yellow" }
+        @{ Text = "   Floor $($p.Floor)/$($Global:MaxFloor)"; Color = "White" }
+        @{ Text = "   Turn $($p.Turn)"; Color = "DarkGray" }
+    )
+    if ($p.StatusEffects.Count -gt 0) {
+        $titleRuns += @{ Text = "  {"; Color = "White" }
+        $titleRuns += @{ Text = " "; Color = "White" }
+        for ($i = 0; $i -lt $p.StatusEffects.Count; $i++) {
+            if ($i -gt 0) {
+                $titleRuns += @{ Text = ", "; Color = "DarkGray" }
+            }
+            $eff = $p.StatusEffects[$i]
+            $lbl = Get-StatusEffectLabel -Eff $eff
+            $titleRuns += @{ Text = "$lbl($($eff.Duration))"; Color = (Get-StatusEffectColor -Eff $eff) }
+        }
+        $titleRuns += @{ Text = " }"; Color = "White" }
+    }
+    Add-BufferedLine -Builder $frame -Width $width -Runs $titleRuns
+
+    $hpMax = [math]::Max(1, [double]$p.MaxHP)
+    $hpFilled = [int][math]::Round((Get-Clamp -Value ($p.HP / $hpMax) -Min 0 -Max 1) * 20)
+    $hpEmpty = 20 - $hpFilled
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = "HP ["; Color = "Gray" }
+        @{ Text = ("#" * $hpFilled); Color = (Get-HPColor -Current $p.HP -Max $p.MaxHP) }
+        @{ Text = ("-" * $hpEmpty); Color = "DarkGray" }
+        @{ Text = ("] {0}/{1}" -f [int]$p.HP, [int]$p.MaxHP); Color = "White" }
+        @{ Text = "   ATK $($p.Attack)"; Color = "Red" }
+        @{ Text = "   DEF $($p.Defense)"; Color = "Cyan" }
+        @{ Text = "   CRIT $([int]($p.Crit * 100))%"; Color = "Yellow" }
+        @{ Text = "   DODGE $([int]($p.Dodge * 100))%"; Color = "Green" }
+    )
+
+    $xpMax = [math]::Max(1, [double]$p.XPToNext)
+    $xpFilled = [int][math]::Round((Get-Clamp -Value ($p.XP / $xpMax) -Min 0 -Max 1) * 20)
+    $xpEmpty = 20 - $xpFilled
     $abilStatus = "Ready"
     if ($p.AbilityCooldown -gt 0) { $abilStatus = "$($p.AbilityCooldown)t" }
-    Write-Host "   $($p.AbilityName): $abilStatus" -ForegroundColor DarkCyan
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = "XP ["; Color = "Gray" }
+        @{ Text = ("#" * $xpFilled); Color = "Magenta" }
+        @{ Text = ("-" * $xpEmpty); Color = "DarkGray" }
+        @{ Text = ("] {0}/{1}" -f $p.XP, $p.XPToNext); Color = "White" }
+        @{ Text = "   Gold $($p.Gold)"; Color = "Yellow" }
+        @{ Text = "   $($p.AbilityName): $abilStatus"; Color = "DarkCyan" }
+    )
 
-    $statusText = @()
-    foreach ($eff in $p.StatusEffects) {
-        $lbl = Get-StatusEffectLabel -Eff $eff
-        $statusText += "$lbl($($eff.Duration))"
-    }
-    if ($statusText.Count -gt 0) {
-        Write-Host ("Status: " + ($statusText -join ", ")) -ForegroundColor Magenta
-    } else {
-        Write-Host ""
-    }
-    Write-Host ("=" * 100) -ForegroundColor DarkGray
-}
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = ("=" * $width); Color = "DarkGray" }
+    )
 
-function Show-MapView {
+    $monsterAt = @{}
+    foreach ($m in $Global:Monsters) {
+        if ($m.Alive) { $monsterAt["$($m.X),$($m.Y)"] = $m }
+    }
+
     for ($y = 0; $y -lt $Global:MapHeight; $y++) {
-        $cells = @()
+        $currentColor = $null
         for ($x = 0; $x -lt $Global:MapWidth; $x++) {
-            $cells += (Get-TileRenderCell -X $x -Y $y)
-        }
-        Write-ColorRuns -Cells $cells
-    }
-}
+            $key = "$x,$y"
+            $tile = $Global:Map[$key]
+            $char = "."
+            $color = "DarkGray"
 
-function Show-MessageLog {
-    Write-Host ("-" * 100) -ForegroundColor DarkGray
+            if ($x -eq $p.X -and $y -eq $p.Y) {
+                $char = "@"
+                $color = "White"
+            } elseif (-not $tile.Discovered) {
+                $char = " "
+                $color = "Black"
+            } elseif ($monsterAt.ContainsKey($key)) {
+                $char = $monsterAt[$key].Symbol
+                $color = $monsterAt[$key].Color
+            } else {
+                switch ($tile.Type) {
+                    "Wall"   { $char = "#"; $color = "DarkGray"; break }
+                    "Floor"  { $char = "."; $color = "DarkGray"; break }
+                    "Stairs" { $char = ">"; $color = "White"; break }
+                    "Shop"   { $char = "M"; $color = "Yellow"; break }
+                    "Shrine" { $char = "&"; $color = "Magenta"; break }
+                    "Chest"  {
+                        $char = "*"
+                        if ($tile.Opened) { $color = "DarkGray" } else { $color = "Yellow" }
+                        break
+                    }
+                    "Gold"   { $char = '$'; $color = "Yellow"; break }
+                    "Item"   {
+                        $it = $Global:ItemMaster[$tile.ItemName]
+                        if ($it) {
+                            $char = $it.Symbol
+                            $color = $it.Color
+                        } else {
+                            $char = "?"
+                            $color = "White"
+                        }
+                        break
+                    }
+                    "Trap"   {
+                        if ($tile.ContainsKey("Triggered") -and $tile.Triggered) {
+                            $char = "^"
+                            switch ($tile.TrapType) {
+                                "Spike"   { $color = "Red"; break }
+                                "Gas"     { $color = "Green"; break }
+                                "Pitfall" { $color = "Gray"; break }
+                                default   { $color = "Red"; break }
+                            }
+                        } elseif (($tile.ContainsKey("Detected") -and $tile.Detected) -or ($tile.ContainsKey("Revealed") -and $tile.Revealed)) {
+                            $char = "^"
+                            $color = "DarkGray"
+                        }
+                        break
+                    }
+                    default { $char = "."; $color = "DarkGray"; break }
+                }
+            }
+
+            if ($color -ne $currentColor) {
+                Add-AnsiForeground -Builder $frame -Color $color
+                $currentColor = $color
+            }
+            [void]$frame.Append($char)
+        }
+
+        [void]$frame.Append([char]27)
+        [void]$frame.Append("[0m")
+        if ($Global:MapWidth -lt $width) {
+            [void]$frame.Append(" " * ($width - $Global:MapWidth))
+        }
+        [void]$frame.Append("`r`n")
+    }
+
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = ("-" * $width); Color = "DarkGray" }
+    )
+    $fixedRows = 28
+    $messageRows = [int](Get-Clamp -Value ($ViewportHeight - $fixedRows) -Min 0 -Max 5)
     $logCount = $Global:MessageLog.Count
-    $showCount = [math]::Min(5, $logCount)
-    if ($showCount -eq 0) {
-        for ($i = 0; $i -lt 5; $i++) { Write-Host "" }
-    } else {
-        $startIdx = $logCount - $showCount
-        for ($i = $startIdx; $i -lt $logCount; $i++) {
-            $msg = $Global:MessageLog[$i]
-            Write-Host $msg.Text -ForegroundColor $msg.Color
+    $showCount = [math]::Min($messageRows, $logCount)
+    $startIdx = $logCount - $showCount
+    for ($i = 0; $i -lt $messageRows; $i++) {
+        if ($i -lt $showCount) {
+            $msg = $Global:MessageLog[$startIdx + $i]
+            Add-BufferedLine -Builder $frame -Width $width -Runs @(
+                @{ Text = $msg.Text; Color = $msg.Color }
+            )
+        } else {
+            Add-BufferedLine -Builder $frame -Width $width -Runs @(
+                @{ Text = ""; Color = "DarkGray" }
+            )
         }
-        for ($i = $showCount; $i -lt 5; $i++) { Write-Host "" }
     }
-}
+    Add-BufferedLine -Builder $frame -Width $width -Runs @(
+        @{ Text = ("-" * $width); Color = "DarkGray" }
+    )
+    Add-BufferedLine -Builder $frame -Width $width -NoNewline -Runs @(
+        @{ Text = "[Arrows/WASD] Move/Attack  [Enter] Interact  [Space] Wait/Stairs  [Q/I/C/Esc] Actions"; Color = "DarkGray" }
+    )
+    [void]$frame.Append([char]27)
+    [void]$frame.Append("[J")
 
-function Show-Hints {
-    Write-Host ("-" * 100) -ForegroundColor DarkGray
-    Write-Host "[Arrows/WASD] Move/Attack  [Enter] Interact  [Space] Wait/Stairs  [Q] Ability  [I] Inventory  [C] Character  [Esc] Menu" -ForegroundColor DarkGray
+    return $frame.ToString()
 }
 
 function Render-Screen {
-    Clear-Host
-    Show-Header
-    Show-MapView
-    Show-MessageLog
-    Show-Hints
+    $frameWidth = Get-DungeonFrameWidth
+    $viewportHeight = Get-DungeonViewportHeight
+    if ($frameWidth -ne $Global:LastGameWindowWidth -or $viewportHeight -ne $Global:LastGameWindowHeight) {
+        $Global:GameScreenNeedsClear = $true
+    }
+    if ($Global:GameScreenNeedsClear) {
+        Clear-Host
+        $Global:GameScreenNeedsClear = $false
+    }
+    $frame = New-DungeonFrame -Width $frameWidth -ViewportHeight $viewportHeight
+    [System.Console]::Write($frame)
+    $Global:LastGameWindowWidth = $frameWidth
+    $Global:LastGameWindowHeight = $viewportHeight
 }
 
 # ============================================================================
@@ -1915,7 +2055,10 @@ function Invoke-InventoryItemSelection {
     }
 
     if ($item.Type -eq "Potion" -or $item.Type -eq "Scroll") {
-        $useCount = Read-InventoryUseCount -ItemName $ItemName -MaxQty $Qty
+        $useCount = 1
+        if ($item.Type -eq "Potion" -and $item.Effect -ne "CurePoison") {
+            $useCount = Read-InventoryUseCount -ItemName $ItemName -MaxQty $Qty
+        }
         if ($useCount -le 0) { return }
 
         $targetText = $ItemName
@@ -1940,6 +2083,7 @@ function Invoke-InventoryItemSelection {
 }
 
 function Show-InventoryMenu {
+    $Global:GameScreenNeedsClear = $true
     $done = $false
     while (-not $done) {
         Clear-Host
@@ -2005,6 +2149,7 @@ function Show-InventoryMenu {
 }
 
 function Show-CharacterSheet {
+    $Global:GameScreenNeedsClear = $true
     Clear-Host
     $p = $Global:Player
     Write-Host ("=" * 100) -ForegroundColor DarkGray
@@ -2036,6 +2181,7 @@ function Show-CharacterSheet {
 # ============================================================================
 
 function Show-ShopMenu {
+    $Global:GameScreenNeedsClear = $true
     $tile = $Global:Map["$($Global:Player.X),$($Global:Player.Y)"]
     if (-not $tile.ContainsKey('Stock')) {
         $pool = @()
@@ -2176,6 +2322,7 @@ function Show-HelpScreen {
 }
 
 function Show-PauseMenu {
+    $Global:GameScreenNeedsClear = $true
     $result = "Resume"
     $done = $false
     while (-not $done) {
@@ -2555,26 +2702,35 @@ function Show-MainMenu {
 # ============================================================================
 
 function Start-GameLoop {
+    Resize-DelveConsole
+    $Global:GameScreenNeedsClear = $true
+    $Global:LastGameWindowWidth = 0
+    $Global:LastGameWindowHeight = 0
+    $needsRender = $true
     while ($true) {
-        Render-Screen
+        if ($needsRender) {
+            Render-Screen
+            $needsRender = $false
+        }
         $key = [System.Console]::ReadKey($true)
 
         switch ($key.Key) {
-            "UpArrow"    { Move-Player -DX 0 -DY -1; break }
-            "DownArrow"  { Move-Player -DX 0 -DY 1; break }
-            "LeftArrow"  { Move-Player -DX -1 -DY 0; break }
-            "RightArrow" { Move-Player -DX 1 -DY 0; break }
-            "W" { Move-Player -DX 0 -DY -1; break }
-            "S" { Move-Player -DX 0 -DY 1; break }
-            "A" { Move-Player -DX -1 -DY 0; break }
-            "D" { Move-Player -DX 1 -DY 0; break }
-            "Enter" { Invoke-TileInteract; break }
-            "Spacebar" { Wait-Turn; break }
-            "I" { Show-InventoryMenu; break }
-            "Q" { Use-Ability; break }
-            "C" { Show-CharacterSheet; break }
+            "UpArrow"    { $needsRender = Move-Player -DX 0 -DY -1; break }
+            "DownArrow"  { $needsRender = Move-Player -DX 0 -DY 1; break }
+            "LeftArrow"  { $needsRender = Move-Player -DX -1 -DY 0; break }
+            "RightArrow" { $needsRender = Move-Player -DX 1 -DY 0; break }
+            "W" { $needsRender = Move-Player -DX 0 -DY -1; break }
+            "S" { $needsRender = Move-Player -DX 0 -DY 1; break }
+            "A" { $needsRender = Move-Player -DX -1 -DY 0; break }
+            "D" { $needsRender = Move-Player -DX 1 -DY 0; break }
+            "Enter" { Invoke-TileInteract; $needsRender = $true; break }
+            "Spacebar" { Wait-Turn; $needsRender = $true; break }
+            "I" { Show-InventoryMenu; $needsRender = $true; break }
+            "Q" { Use-Ability; $needsRender = $true; break }
+            "C" { Show-CharacterSheet; $needsRender = $true; break }
             "Escape" {
                 $res = Show-PauseMenu
+                $needsRender = $true
                 if ($res -eq "Abandoned") {
                     Show-AbandonScreen
                     $Global:Player = $null
@@ -2599,19 +2755,11 @@ function Start-GameLoop {
 # ============================================================================
 #  PRE-FLIGHT: CONSOLE SIZING
 # ============================================================================
-# DELVE's full screen (header + 20-row map + message log + hint line) is
-# 34 lines tall and up to 100 columns wide. Many default console profiles
-# are shorter than that, which causes Clear-Host to visually "stack" old
-# frames instead of cleanly redrawing -- the window's viewport scrolls
-# down a little further each turn because the content doesn't fit, even
-# though each frame really is being drawn fresh into a cleared buffer.
-# This grows the window/buffer to fit, once, at startup. It only ever
-# grows (never shrinks) and only if the current size is already too
-# small, and every step is wrapped in try/catch: plenty of hosts (many
-# Windows Terminal profiles, VS Code's integrated terminal, the ISE)
-# don't support resizing at all or throw when asked, and this fails
-# silently in those cases -- the game still runs, just may need manual
-# resizing or scrolling in those specific hosts.
+# DELVE's full buffered game frame is 33 lines tall and up to 100 columns
+# wide. The console is grown slightly beyond those dimensions so writing the
+# rightmost column cannot wrap or scroll the viewport. Hosts that do not
+# support resizing are handled by adapting the frame width and message count
+# to the available viewport while preserving the full 70-column dungeon map.
 
 $Global:DelveLayoutWidth = 102
 $Global:DelveLayoutHeight = 40
@@ -2683,3 +2831,4 @@ try {
 # 1.0.0 - 07/04/26
 # 1.0.1 - 07/05/26 - Bugfixes, balance and formatting changes. 
 # 1.0.2 - 07/07/26 - Locked class costs follow Sanctuary data; New Run confirms before replacing a save; Abandon Run banks earned Echoes without death credit. Reworked/added new items, added new rarities. Locked class costs follow Sanctuary data; New Run confirms before replacing a save; Abandon Run banks earned Echoes without death credit; inventory item use now confirms inline; Space uses stairs when standing on them; Enter reuses stairs, merchants, and shrines.
+# 1.0.3 - 07/08/26 - Replaced per-turn Clear-Host rendering with a viewport-aware buffered ANSI repaint; reduced dungeon output to one console write per frame; indexed monsters by tile during rendering; prevented frame wrapping and scrolling; skipped redraws for ignored keys and blocked movement; moved colored status effects into the title row; and restricted multi-use inventory actions to non-antidote potions.
