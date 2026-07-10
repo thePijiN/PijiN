@@ -246,13 +246,17 @@ function Write-MenuOptionLine {
         [Parameter(Mandatory = $true)]
         [bool] $Selected,
 
-        [string] $Hint = ""
+        [string] $Hint = "",
+
+        [ConsoleColor] $SelectedColor = [ConsoleColor]::Yellow,
+
+        [ConsoleColor] $UnselectedColor = [ConsoleColor]::Gray
     )
 
     $segments = @(
         [pscustomobject] @{
             Text  = $Text
-            Color = $(if ($Selected) { [ConsoleColor]::Yellow } else { [ConsoleColor]::Gray })
+            Color = $(if ($Selected) { $SelectedColor } else { $UnselectedColor })
         }
     )
 
@@ -264,6 +268,36 @@ function Write-MenuOptionLine {
     }
 
     Write-MenuSegmentsAtColumn -Segments $segments -Row $Row -Column $Column
+}
+
+function Get-MenuNumberFromKey {
+    param(
+        [Parameter(Mandatory = $true)]
+        [ConsoleKey] $Key
+    )
+
+    switch ($Key) {
+        "D1"      { return 1 }
+        "NumPad1" { return 1 }
+        "D2"      { return 2 }
+        "NumPad2" { return 2 }
+        "D3"      { return 3 }
+        "NumPad3" { return 3 }
+        "D4"      { return 4 }
+        "NumPad4" { return 4 }
+        "D5"      { return 5 }
+        "NumPad5" { return 5 }
+        "D6"      { return 6 }
+        "NumPad6" { return 6 }
+        "D7"      { return 7 }
+        "NumPad7" { return 7 }
+        "D8"      { return 8 }
+        "NumPad8" { return 8 }
+        "D9"      { return 9 }
+        "NumPad9" { return 9 }
+    }
+
+    return 0
 }
 
 function Show-MainMenu {
@@ -315,7 +349,8 @@ function Show-MainMenu {
         $playersText = "[2] Players: {0}" -f $playerCount
         $speedText = "[3] Speed: {0}ms ({1:N1} cells/sec)" -f $menuTickMilliseconds, $cellsPerSecond
         $turboText = "[4] Turbo: {0}" -f $(if ($turboEnabled) { "Enabled" } else { "Disabled" })
-        $menuWidth = @($startText.Length, $playersText.Length, $speedText.Length, $turboText.Length) | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
+        $versusText = "[V] Versus"
+        $menuWidth = @($startText.Length, $playersText.Length, $speedText.Length, $turboText.Length, $versusText.Length) | Measure-Object -Maximum | Select-Object -ExpandProperty Maximum
         $menuColumn = [Math]::Max(0, [Math]::Floor(([Console]::WindowWidth - $menuWidth) / 2))
 
         Write-CenteredMenuLine -Text "Multiplayer TRON in PowerShell 5.1" -Row ($firstRow + $art.Count + 1) -Color White
@@ -343,23 +378,55 @@ function Show-MainMenu {
             -Column $menuColumn `
             -Selected ($selectedItem -eq 3) `
             -Hint " (LEFT/RIGHT)"
-        Write-CenteredMenuLine -Text "UP/DOWN: select   1/2/3/4: quick actions   ENTER: start   ESC: quit" -Row ($firstRow + $art.Count + 12) -Color DarkGray
+        Write-MenuOptionLine `
+            -Text $versusText `
+            -Row ($firstRow + $art.Count + 8) `
+            -Column $menuColumn `
+            -Selected ($selectedItem -eq 4) `
+            -Hint " (ENTER)"
+        Write-CenteredMenuLine -Text "UP/DOWN or W/S: select   LEFT/RIGHT or A/D: adjust   1/2/3/4/V: shortcuts   ENTER/SPACE: choose   ESC: quit" -Row ($firstRow + $art.Count + 12) -Color DarkGray
 
         $key = [Console]::ReadKey($true).Key
         switch ($key) {
             "UpArrow" {
                 $selectedItem--
                 if ($selectedItem -lt 0) {
-                    $selectedItem = 3
+                    $selectedItem = 4
+                }
+            }
+            "W" {
+                $selectedItem--
+                if ($selectedItem -lt 0) {
+                    $selectedItem = 4
                 }
             }
             "DownArrow" {
                 $selectedItem++
-                if ($selectedItem -gt 3) {
+                if ($selectedItem -gt 4) {
+                    $selectedItem = 0
+                }
+            }
+            "S" {
+                $selectedItem++
+                if ($selectedItem -gt 4) {
                     $selectedItem = 0
                 }
             }
             "LeftArrow" {
+                if ($selectedItem -eq 1) {
+                    $playerCount--
+                    if ($playerCount -lt 1) {
+                        $playerCount = 3
+                    }
+                }
+                elseif ($selectedItem -eq 2) {
+                    $menuTickMilliseconds = [Math]::Max(25, $menuTickMilliseconds - 5)
+                }
+                elseif ($selectedItem -eq 3) {
+                    $turboEnabled = -not $turboEnabled
+                }
+            }
+            "A" {
                 if ($selectedItem -eq 1) {
                     $playerCount--
                     if ($playerCount -lt 1) {
@@ -387,7 +454,47 @@ function Show-MainMenu {
                     $turboEnabled = -not $turboEnabled
                 }
             }
+            "D" {
+                if ($selectedItem -eq 1) {
+                    $playerCount++
+                    if ($playerCount -gt 3) {
+                        $playerCount = 1
+                    }
+                }
+                elseif ($selectedItem -eq 2) {
+                    $menuTickMilliseconds = [Math]::Min(250, $menuTickMilliseconds + 5)
+                }
+                elseif ($selectedItem -eq 3) {
+                    $turboEnabled = -not $turboEnabled
+                }
+            }
             "Enter" {
+                if ($selectedItem -eq 4) {
+                    return [pscustomobject] @{
+                        Action           = "Versus"
+                        PlayerCount      = $playerCount
+                        TickMilliseconds = $menuTickMilliseconds
+                        TurboEnabled     = $turboEnabled
+                    }
+                }
+
+                return [pscustomobject] @{
+                    Action           = "Start"
+                    PlayerCount      = $playerCount
+                    TickMilliseconds = $menuTickMilliseconds
+                    TurboEnabled     = $turboEnabled
+                }
+            }
+            "Spacebar" {
+                if ($selectedItem -eq 4) {
+                    return [pscustomobject] @{
+                        Action           = "Versus"
+                        PlayerCount      = $playerCount
+                        TickMilliseconds = $menuTickMilliseconds
+                        TurboEnabled     = $turboEnabled
+                    }
+                }
+
                 return [pscustomobject] @{
                     Action           = "Start"
                     PlayerCount      = $playerCount
@@ -452,6 +559,15 @@ function Show-MainMenu {
             "NumPad4" {
                 $selectedItem = 3
                 $turboEnabled = -not $turboEnabled
+            }
+            "V" {
+                $selectedItem = 4
+                return [pscustomobject] @{
+                    Action           = "Versus"
+                    PlayerCount      = $playerCount
+                    TickMilliseconds = $menuTickMilliseconds
+                    TurboEnabled     = $turboEnabled
+                }
             }
             "Escape" {
                 return [pscustomobject] @{
@@ -542,6 +658,7 @@ function New-Player {
         Active         = $true
         TurboTicksRemaining = 0
         TurboCooldownTicksRemaining = 0
+        AiDecisionTicksRemaining = 0
     }
 }
 
@@ -656,12 +773,18 @@ function Get-HeaderSegments {
 
         [int[]] $HumanPlayerNumbers = @(1, 2, 3),
 
+        [int16[]] $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10),
+
         [object[]] $Players = $null
     )
 
-    $playerOneAttribute = [int16] 11
-    $playerTwoAttribute = [int16] 13
-    $playerThreeAttribute = [int16] 10
+    if ($PlayerHeaderAttributes.Count -lt 3) {
+        $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10)
+    }
+
+    $playerOneAttribute = $PlayerHeaderAttributes[0]
+    $playerTwoAttribute = $PlayerHeaderAttributes[1]
+    $playerThreeAttribute = $PlayerHeaderAttributes[2]
     $labels = @("P1", "P2", "P3")
 
     for ($index = 0; $index -lt $PlayerLabels.Count -and $index -lt 3; $index++) {
@@ -804,10 +927,12 @@ function Update-Header {
 
         [string[]] $PlayerLabels = @("P1", "P2", "P3"),
 
-        [int[]] $HumanPlayerNumbers = @(1, 2, 3)
+        [int[]] $HumanPlayerNumbers = @(1, 2, 3),
+
+        [int16[]] $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10)
     )
 
-    $headerSegments = Get-HeaderSegments -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers -Players $Arena.Players
+    $headerSegments = Get-HeaderSegments -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers -PlayerHeaderAttributes $PlayerHeaderAttributes -Players $Arena.Players
     Set-HeaderBuffer `
         -Characters $Arena.Characters `
         -Attributes $Arena.Attributes `
@@ -873,7 +998,13 @@ function New-Arena {
 
         [string[]] $PlayerLabels = @("P1", "P2", "P3"),
 
-        [int[]] $HumanPlayerNumbers = @(1, 2, 3)
+        [int[]] $HumanPlayerNumbers = @(1, 2, 3),
+
+        [int16[]] $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10),
+
+        [int16[]] $PlayerColorAttributes = @([int16] 176, [int16] 208, [int16] 160),
+
+        [int16[]] $PlayerTurboColorAttributes = @([int16] 48, [int16] 80, [int16] 32)
     )
 
     $width = $Snapshot.Width
@@ -882,6 +1013,16 @@ function New-Arena {
     $characters = New-Object "char[]" $cellCount
     $attributes = New-Object "int16[]" $cellCount
     $grid = [Array]::CreateInstance([int], $width, $height)
+
+    if ($PlayerHeaderAttributes.Count -lt 3) {
+        $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10)
+    }
+    if ($PlayerColorAttributes.Count -lt 3) {
+        $PlayerColorAttributes = @([int16] 176, [int16] 208, [int16] 160)
+    }
+    if ($PlayerTurboColorAttributes.Count -lt 3) {
+        $PlayerTurboColorAttributes = @([int16] 48, [int16] 80, [int16] 32)
+    }
 
     for ($index = 0; $index -lt $cellCount; $index++) {
         $characters[$index] = [char] " "
@@ -916,19 +1057,19 @@ function New-Arena {
     }
 
     $players = @(
-        (New-Player -Number 1 -X $playerOneX -Y $startY -Dx 1 -Dy 0 -CellValue 2 -ColorAttribute ([int16] 176) -TurboColorAttribute ([int16] 48)),
-        (New-Player -Number 2 -X $playerTwoX -Y $startY -Dx -1 -Dy 0 -CellValue 3 -ColorAttribute ([int16] 208) -TurboColorAttribute ([int16] 80))
+        (New-Player -Number 1 -X $playerOneX -Y $startY -Dx 1 -Dy 0 -CellValue 2 -ColorAttribute $PlayerColorAttributes[0] -TurboColorAttribute $PlayerTurboColorAttributes[0]),
+        (New-Player -Number 2 -X $playerTwoX -Y $startY -Dx -1 -Dy 0 -CellValue 3 -ColorAttribute $PlayerColorAttributes[1] -TurboColorAttribute $PlayerTurboColorAttributes[1])
     )
 
     if ($PlayerCount -eq 3) {
         $playerThreeX = [Math]::Floor($width / 2)
         $playerThreeY = [Math]::Min($height - 3, [Math]::Floor(($height * 3) / 4))
         $players += @(
-            (New-Player -Number 3 -X $playerThreeX -Y $playerThreeY -Dx 0 -Dy -1 -CellValue 4 -ColorAttribute ([int16] 160) -TurboColorAttribute ([int16] 32))
+            (New-Player -Number 3 -X $playerThreeX -Y $playerThreeY -Dx 0 -Dy -1 -CellValue 4 -ColorAttribute $PlayerColorAttributes[2] -TurboColorAttribute $PlayerTurboColorAttributes[2])
         )
     }
 
-    $headerSegments = Get-HeaderSegments -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers -Players $players
+    $headerSegments = Get-HeaderSegments -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers -PlayerHeaderAttributes $PlayerHeaderAttributes -Players $players
     Set-HeaderBuffer `
         -Characters $characters `
         -Attributes $attributes `
@@ -962,7 +1103,10 @@ function New-AIProfile {
         [int] $SpaceWeight = 4,
         [int] $SpaceLimit = 160,
         [int] $TurnPenalty = 14,
-        [int] $ForwardBias = 10
+        [int] $ForwardBias = 10,
+        [int] $DecisionIntervalTicks = 1,
+        [int] $EmergencyLookAhead = 1,
+        [int] $EmergencyChance = 100
     )
 
     [pscustomobject] @{
@@ -977,6 +1121,9 @@ function New-AIProfile {
         SpaceLimit        = $SpaceLimit
         TurnPenalty       = $TurnPenalty
         ForwardBias       = $ForwardBias
+        DecisionIntervalTicks = $DecisionIntervalTicks
+        EmergencyLookAhead = $EmergencyLookAhead
+        EmergencyChance    = $EmergencyChance
     }
 }
 
@@ -1233,6 +1380,44 @@ function Get-AIDirectionChoice {
     return $bestChoice
 }
 
+function Test-AIEmergencyReaction {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Player,
+
+        [Parameter(Mandatory = $true)]
+        $Arena,
+
+        [Parameter(Mandatory = $true)]
+        $Snapshot,
+
+        [Parameter(Mandatory = $true)]
+        $Profile
+    )
+
+    if ($Profile.EmergencyLookAhead -lt 0 -or $Profile.EmergencyChance -le 0) {
+        return $false
+    }
+
+    $currentDx = $Player.PendingDx
+    $currentDy = $Player.PendingDy
+    $maximumDistance = [Math]::Max(1, ($Profile.EmergencyLookAhead + 1))
+    $safeDistance = Get-SafeDistance `
+        -Arena $Arena `
+        -Snapshot $Snapshot `
+        -StartX ($Player.X + $currentDx) `
+        -StartY ($Player.Y + $currentDy) `
+        -Dx $currentDx `
+        -Dy $currentDy `
+        -MaximumDistance $maximumDistance
+
+    if ($safeDistance -gt $Profile.EmergencyLookAhead) {
+        return $false
+    }
+
+    return ((Get-Random -Minimum 0 -Maximum 100) -lt $Profile.EmergencyChance)
+}
+
 function Update-AIPlayers {
     param(
         [Parameter(Mandatory = $true)]
@@ -1246,7 +1431,9 @@ function Update-AIPlayers {
 
         [object[]] $AiProfiles = @(),
 
-        [bool] $TurboEnabled = $true
+        [bool] $TurboEnabled = $true,
+
+        [bool] $BaseTickFrame = $false
     )
 
     foreach ($profile in $AiProfiles) {
@@ -1257,6 +1444,23 @@ function Update-AIPlayers {
 
         $player = $Players[$playerIndex]
         if (-not $player.Active) {
+            continue
+        }
+
+        if ($BaseTickFrame -and $player.AiDecisionTicksRemaining -gt 0) {
+            $player.AiDecisionTicksRemaining--
+        }
+
+        $shouldDecide = ($player.AiDecisionTicksRemaining -le 0)
+        if (-not $shouldDecide) {
+            $shouldDecide = Test-AIEmergencyReaction `
+                -Player $player `
+                -Arena $Arena `
+                -Snapshot $Snapshot `
+                -Profile $profile
+        }
+
+        if (-not $shouldDecide) {
             continue
         }
 
@@ -1272,6 +1476,7 @@ function Update-AIPlayers {
         }
 
         Set-PendingDirection -Player $player -Dx $choice.Dx -Dy $choice.Dy
+        $player.AiDecisionTicksRemaining = [Math]::Max(1, $profile.DecisionIntervalTicks)
 
         if (
             $TurboEnabled -and
@@ -1302,6 +1507,12 @@ function Start-Round {
 
         [int[]] $HumanPlayerNumbers = @(1, 2, 3),
 
+        [int16[]] $PlayerHeaderAttributes = @([int16] 11, [int16] 13, [int16] 10),
+
+        [int16[]] $PlayerColorAttributes = @([int16] 176, [int16] 208, [int16] 160),
+
+        [int16[]] $PlayerTurboColorAttributes = @([int16] 48, [int16] 80, [int16] 32),
+
         [bool] $EndWhenPlayerOneEliminated = $false
     )
 
@@ -1313,7 +1524,16 @@ function Start-Round {
         }
     }
 
-    $arena = New-Arena -Snapshot $snapshot -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers
+    $arena = New-Arena `
+        -Snapshot $snapshot `
+        -Scores $Scores `
+        -PlayerCount $PlayerCount `
+        -TurboEnabled $TurboEnabled `
+        -PlayerLabels $PlayerLabels `
+        -HumanPlayerNumbers $HumanPlayerNumbers `
+        -PlayerHeaderAttributes $PlayerHeaderAttributes `
+        -PlayerColorAttributes $PlayerColorAttributes `
+        -PlayerTurboColorAttributes $PlayerTurboColorAttributes
     [Tron.NativeConsole]::WriteBuffer(
         $snapshot.WindowLeft,
         $snapshot.WindowTop,
@@ -1356,15 +1576,17 @@ function Start-Round {
             }
         }
 
+        $frameNumber++
+        $baseTickFrame = (($frameNumber % 2) -eq 0)
+
         Update-AIPlayers `
             -Players $players `
             -Arena $arena `
             -Snapshot $snapshot `
             -AiProfiles $AiProfiles `
-            -TurboEnabled $TurboEnabled
+            -TurboEnabled $TurboEnabled `
+            -BaseTickFrame $baseTickFrame
 
-        $frameNumber++
-        $baseTickFrame = (($frameNumber % 2) -eq 0)
         [int[]] $nextX = New-Object "int[]" $players.Count
         [int[]] $nextY = New-Object "int[]" $players.Count
         [bool[]] $crashed = New-Object "bool[]" $players.Count
@@ -1448,7 +1670,15 @@ function Start-Round {
 
         if ($baseTickFrame) {
             Update-TurboTimers -Players $players
-            Update-Header -Snapshot $snapshot -Arena $arena -Scores $Scores -PlayerCount $PlayerCount -TurboEnabled $TurboEnabled -PlayerLabels $PlayerLabels -HumanPlayerNumbers $HumanPlayerNumbers
+            Update-Header `
+                -Snapshot $snapshot `
+                -Arena $arena `
+                -Scores $Scores `
+                -PlayerCount $PlayerCount `
+                -TurboEnabled $TurboEnabled `
+                -PlayerLabels $PlayerLabels `
+                -HumanPlayerNumbers $HumanPlayerNumbers `
+                -PlayerHeaderAttributes $PlayerHeaderAttributes
         }
 
         if ($someoneCrashed) {
@@ -1597,10 +1827,101 @@ function Get-ClampedTickMilliseconds {
     return [Math]::Min(250, [Math]::Max(25, $TickMilliseconds))
 }
 
+function Get-PlayerColorSet {
+    param(
+        [string] $Name
+    )
+
+    $key = $Name.ToUpperInvariant()
+
+    switch ($key) {
+        "YOU" {
+            return [pscustomobject] @{ Header = [int16] 11; Trail = [int16] 176; TurboTrail = [int16] 48 }
+        }
+        "P1" {
+            return [pscustomobject] @{ Header = [int16] 11; Trail = [int16] 176; TurboTrail = [int16] 48 }
+        }
+        "P2" {
+            return [pscustomobject] @{ Header = [int16] 13; Trail = [int16] 208; TurboTrail = [int16] 80 }
+        }
+        "P3" {
+            return [pscustomobject] @{ Header = [int16] 10; Trail = [int16] 160; TurboTrail = [int16] 32 }
+        }
+        "SCOUT" {
+            return [pscustomobject] @{ Header = [int16] 15; Trail = [int16] 240; TurboTrail = [int16] 128 }
+        }
+        "HUNTER" {
+            return [pscustomobject] @{ Header = [int16] 14; Trail = [int16] 224; TurboTrail = [int16] 96 }
+        }
+        "PINCR" {
+            return [pscustomobject] @{ Header = [int16] 9; Trail = [int16] 144; TurboTrail = [int16] 16 }
+        }
+        "PINCER" {
+            return [pscustomobject] @{ Header = [int16] 9; Trail = [int16] 144; TurboTrail = [int16] 16 }
+        }
+        "ROOK" {
+            return [pscustomobject] @{ Header = [int16] 10; Trail = [int16] 160; TurboTrail = [int16] 32 }
+        }
+        "MCP" {
+            return [pscustomobject] @{ Header = [int16] 12; Trail = [int16] 192; TurboTrail = [int16] 64 }
+        }
+        "GUARD" {
+            return [pscustomobject] @{ Header = [int16] 7; Trail = [int16] 112; TurboTrail = [int16] 128 }
+        }
+        "BOSS" {
+            return [pscustomobject] @{ Header = [int16] 15; Trail = [int16] 240; TurboTrail = [int16] 112 }
+        }
+        default {
+            return [pscustomobject] @{ Header = [int16] 13; Trail = [int16] 208; TurboTrail = [int16] 80 }
+        }
+    }
+}
+
+function Get-PlayerColorArrays {
+    param(
+        [string[]] $PlayerLabels
+    )
+
+    $headerAttributes = New-Object "int16[]" 3
+    $trailAttributes = New-Object "int16[]" 3
+    $turboTrailAttributes = New-Object "int16[]" 3
+
+    for ($index = 0; $index -lt 3; $index++) {
+        if ($index -lt $PlayerLabels.Count) {
+            $label = $PlayerLabels[$index]
+        }
+        else {
+            $label = "P{0}" -f ($index + 1)
+        }
+
+        $colorSet = Get-PlayerColorSet -Name $label
+        $headerAttributes[$index] = $colorSet.Header
+        $trailAttributes[$index] = $colorSet.Trail
+        $turboTrailAttributes[$index] = $colorSet.TurboTrail
+    }
+
+    [pscustomobject] @{
+        HeaderAttributes     = $headerAttributes
+        TrailAttributes      = $trailAttributes
+        TurboTrailAttributes = $turboTrailAttributes
+    }
+}
+
 function Get-CampaignLevels {
     param(
         [int] $BaseTickMilliseconds
     )
+
+    $levelOneLabels = @("YOU", "SCOUT", "P3")
+    $levelOneColors = Get-PlayerColorArrays -PlayerLabels $levelOneLabels
+    $levelTwoLabels = @("YOU", "HUNTER", "P3")
+    $levelTwoColors = Get-PlayerColorArrays -PlayerLabels $levelTwoLabels
+    $levelThreeLabels = @("YOU", "PINCR", "ROOK")
+    $levelThreeColors = Get-PlayerColorArrays -PlayerLabels $levelThreeLabels
+    $levelFourLabels = @("YOU", "MCP", "GUARD")
+    $levelFourColors = Get-PlayerColorArrays -PlayerLabels $levelFourLabels
+    $levelFiveLabels = @("YOU", "BOSS", "P3")
+    $levelFiveColors = Get-PlayerColorArrays -PlayerLabels $levelFiveLabels
 
     @(
         [pscustomobject] @{
@@ -1608,9 +1929,12 @@ function Get-CampaignLevels {
             Name             = "Sector 1: Training Grid"
             PlayerCount      = 2
             TickMilliseconds = (Get-ClampedTickMilliseconds -TickMilliseconds ($BaseTickMilliseconds + 10))
-            PlayerLabels     = @("YOU", "SCOUT", "P3")
+            PlayerLabels     = $levelOneLabels
+            PlayerHeaderAttributes = $levelOneColors.HeaderAttributes
+            PlayerColorAttributes = $levelOneColors.TrailAttributes
+            PlayerTurboColorAttributes = $levelOneColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "Scout" -LookAhead 8 -Jitter 18 -Aggression 0 -TurboChance 0 -TurboMinimumSpace 9 -SpaceWeight 5 -SpaceLimit 120 -TurnPenalty 18 -ForwardBias 18)
+                (New-AIProfile -PlayerNumber 2 -Name "Scout" -LookAhead 8 -Jitter 18 -Aggression 0 -TurboChance 0 -TurboMinimumSpace 9 -SpaceWeight 5 -SpaceLimit 120 -TurnPenalty 18 -ForwardBias 18 -DecisionIntervalTicks 3 -EmergencyLookAhead 0 -EmergencyChance 45)
             )
         },
         [pscustomobject] @{
@@ -1618,9 +1942,12 @@ function Get-CampaignLevels {
             Name             = "Sector 2: Hunter Grid"
             PlayerCount      = 2
             TickMilliseconds = (Get-ClampedTickMilliseconds -TickMilliseconds $BaseTickMilliseconds)
-            PlayerLabels     = @("YOU", "HUNTER", "P3")
+            PlayerLabels     = $levelTwoLabels
+            PlayerHeaderAttributes = $levelTwoColors.HeaderAttributes
+            PlayerColorAttributes = $levelTwoColors.TrailAttributes
+            PlayerTurboColorAttributes = $levelTwoColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "Hunter" -LookAhead 10 -Jitter 12 -Aggression 3 -TurboChance 7 -TurboMinimumSpace 10 -SpaceWeight 5 -SpaceLimit 170 -TurnPenalty 20 -ForwardBias 18)
+                (New-AIProfile -PlayerNumber 2 -Name "Hunter" -LookAhead 10 -Jitter 12 -Aggression 3 -TurboChance 7 -TurboMinimumSpace 10 -SpaceWeight 5 -SpaceLimit 170 -TurnPenalty 20 -ForwardBias 18 -DecisionIntervalTicks 2 -EmergencyLookAhead 0 -EmergencyChance 70)
             )
         },
         [pscustomobject] @{
@@ -1628,10 +1955,13 @@ function Get-CampaignLevels {
             Name             = "Sector 3: Pincer Grid"
             PlayerCount      = 3
             TickMilliseconds = (Get-ClampedTickMilliseconds -TickMilliseconds ($BaseTickMilliseconds - 5))
-            PlayerLabels     = @("YOU", "PINCR", "ROOK")
+            PlayerLabels     = $levelThreeLabels
+            PlayerHeaderAttributes = $levelThreeColors.HeaderAttributes
+            PlayerColorAttributes = $levelThreeColors.TrailAttributes
+            PlayerTurboColorAttributes = $levelThreeColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "Pincer" -LookAhead 10 -Jitter 10 -Aggression 7 -TurboChance 12 -TurboMinimumSpace 10 -SpaceWeight 4 -SpaceLimit 210 -TurnPenalty 14 -ForwardBias 10),
-                (New-AIProfile -PlayerNumber 3 -Name "Rook" -LookAhead 10 -Jitter 8 -Aggression 2 -TurboChance 6 -TurboMinimumSpace 11 -SpaceWeight 6 -SpaceLimit 220 -TurnPenalty 24 -ForwardBias 22)
+                (New-AIProfile -PlayerNumber 2 -Name "Pincer" -LookAhead 10 -Jitter 10 -Aggression 7 -TurboChance 12 -TurboMinimumSpace 10 -SpaceWeight 4 -SpaceLimit 210 -TurnPenalty 14 -ForwardBias 10 -DecisionIntervalTicks 2 -EmergencyLookAhead 1 -EmergencyChance 90),
+                (New-AIProfile -PlayerNumber 3 -Name "Rook" -LookAhead 10 -Jitter 8 -Aggression 2 -TurboChance 6 -TurboMinimumSpace 11 -SpaceWeight 6 -SpaceLimit 220 -TurnPenalty 24 -ForwardBias 22 -DecisionIntervalTicks 2 -EmergencyLookAhead 1 -EmergencyChance 92)
             )
         },
         [pscustomobject] @{
@@ -1639,10 +1969,26 @@ function Get-CampaignLevels {
             Name             = "Sector 4: MCP Core"
             PlayerCount      = 3
             TickMilliseconds = (Get-ClampedTickMilliseconds -TickMilliseconds ($BaseTickMilliseconds - 10))
-            PlayerLabels     = @("YOU", "MCP", "GUARD")
+            PlayerLabels     = $levelFourLabels
+            PlayerHeaderAttributes = $levelFourColors.HeaderAttributes
+            PlayerColorAttributes = $levelFourColors.TrailAttributes
+            PlayerTurboColorAttributes = $levelFourColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "MCP" -LookAhead 13 -Jitter 6 -Aggression 10 -TurboChance 18 -TurboMinimumSpace 11 -SpaceWeight 5 -SpaceLimit 280 -TurnPenalty 15 -ForwardBias 10),
-                (New-AIProfile -PlayerNumber 3 -Name "Guard" -LookAhead 12 -Jitter 6 -Aggression 5 -TurboChance 12 -TurboMinimumSpace 12 -SpaceWeight 7 -SpaceLimit 260 -TurnPenalty 22 -ForwardBias 18)
+                (New-AIProfile -PlayerNumber 2 -Name "MCP" -LookAhead 13 -Jitter 6 -Aggression 10 -TurboChance 18 -TurboMinimumSpace 11 -SpaceWeight 5 -SpaceLimit 280 -TurnPenalty 15 -ForwardBias 10 -DecisionIntervalTicks 1 -EmergencyLookAhead 2 -EmergencyChance 100),
+                (New-AIProfile -PlayerNumber 3 -Name "Guard" -LookAhead 12 -Jitter 6 -Aggression 5 -TurboChance 12 -TurboMinimumSpace 12 -SpaceWeight 7 -SpaceLimit 260 -TurnPenalty 22 -ForwardBias 18 -DecisionIntervalTicks 2 -EmergencyLookAhead 1 -EmergencyChance 95)
+            )
+        },
+        [pscustomobject] @{
+            Number           = 5
+            Name             = "Sector 5: BOSS Grid"
+            PlayerCount      = 2
+            TickMilliseconds = (Get-ClampedTickMilliseconds -TickMilliseconds ($BaseTickMilliseconds - 10))
+            PlayerLabels     = $levelFiveLabels
+            PlayerHeaderAttributes = $levelFiveColors.HeaderAttributes
+            PlayerColorAttributes = $levelFiveColors.TrailAttributes
+            PlayerTurboColorAttributes = $levelFiveColors.TurboTrailAttributes
+            AiProfiles       = @(
+                (New-AIProfile -PlayerNumber 2 -Name "BOSS" -LookAhead 16 -Jitter 0 -Aggression 14 -TurboChance 24 -TurboMinimumSpace 14 -SpaceWeight 7 -SpaceLimit 360 -TurnPenalty 10 -ForwardBias 8 -DecisionIntervalTicks 1 -EmergencyLookAhead 3 -EmergencyChance 100)
             )
         }
     )
@@ -1788,6 +2134,9 @@ function Invoke-CampaignRun {
                 -TurboEnabled $TurboEnabled `
                 -AiProfiles $level.AiProfiles `
                 -PlayerLabels $level.PlayerLabels `
+                -PlayerHeaderAttributes $level.PlayerHeaderAttributes `
+                -PlayerColorAttributes $level.PlayerColorAttributes `
+                -PlayerTurboColorAttributes $level.PlayerTurboColorAttributes `
                 -HumanPlayerNumbers @(1) `
                 -EndWhenPlayerOneEliminated $true
 
@@ -1863,6 +2212,442 @@ function Start-Campaign {
     }
 }
 
+function Copy-AIProfileForPlayer {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Profile,
+
+        [int] $PlayerNumber = 2
+    )
+
+    return New-AIProfile `
+        -PlayerNumber $PlayerNumber `
+        -Name $Profile.Name `
+        -LookAhead $Profile.LookAhead `
+        -Jitter $Profile.Jitter `
+        -Aggression $Profile.Aggression `
+        -TurboChance $Profile.TurboChance `
+        -TurboMinimumSpace $Profile.TurboMinimumSpace `
+        -SpaceWeight $Profile.SpaceWeight `
+        -SpaceLimit $Profile.SpaceLimit `
+        -TurnPenalty $Profile.TurnPenalty `
+        -ForwardBias $Profile.ForwardBias `
+        -DecisionIntervalTicks $Profile.DecisionIntervalTicks `
+        -EmergencyLookAhead $Profile.EmergencyLookAhead `
+        -EmergencyChance $Profile.EmergencyChance
+}
+
+function Get-VersusOpponents {
+    param(
+        [int] $BaseTickMilliseconds
+    )
+
+    $levels = @(Get-CampaignLevels -BaseTickMilliseconds $BaseTickMilliseconds)
+    $opponents = @()
+    $number = 1
+
+    foreach ($level in $levels) {
+        foreach ($profile in $level.AiProfiles) {
+            $aiProfile = Copy-AIProfileForPlayer -Profile $profile -PlayerNumber 2
+            $aiLabel = $aiProfile.Name.ToUpperInvariant()
+            $playerLabels = @("YOU", $aiLabel, "P3")
+            $colors = Get-PlayerColorArrays -PlayerLabels $playerLabels
+
+            $opponents += [pscustomobject] @{
+                Number                     = $number
+                Name                       = $aiProfile.Name
+                PlayerCount                = 2
+                TickMilliseconds           = $level.TickMilliseconds
+                PlayerLabels               = $playerLabels
+                PlayerHeaderAttributes     = $colors.HeaderAttributes
+                PlayerColorAttributes      = $colors.TrailAttributes
+                PlayerTurboColorAttributes = $colors.TurboTrailAttributes
+                AiProfiles                 = @($aiProfile)
+            }
+
+            $number++
+        }
+    }
+
+    return $opponents
+}
+
+function New-VersusOpponentSelection {
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]] $Opponents,
+
+        [int] $SelectedIndex,
+
+        [int] $MarkedIndex = -1
+    )
+
+    if ($SelectedIndex -lt 0 -or $SelectedIndex -ge $Opponents.Count) {
+        return $null
+    }
+
+    if ($MarkedIndex -lt 0 -or $MarkedIndex -ge $Opponents.Count -or $MarkedIndex -eq $SelectedIndex) {
+        return $Opponents[$SelectedIndex]
+    }
+
+    $primaryOpponent = $Opponents[$SelectedIndex]
+    $markedOpponent = $Opponents[$MarkedIndex]
+    $primaryProfile = Copy-AIProfileForPlayer -Profile $primaryOpponent.AiProfiles[0] -PlayerNumber 2
+    $markedProfile = Copy-AIProfileForPlayer -Profile $markedOpponent.AiProfiles[0] -PlayerNumber 3
+    $playerLabels = @("YOU", $primaryProfile.Name.ToUpperInvariant(), $markedProfile.Name.ToUpperInvariant())
+    $colors = Get-PlayerColorArrays -PlayerLabels $playerLabels
+
+    return [pscustomobject] @{
+        Number                     = 0
+        Name                       = ("{0} + {1}" -f $primaryProfile.Name, $markedProfile.Name)
+        PlayerCount                = 3
+        TickMilliseconds           = [Math]::Min([int] $primaryOpponent.TickMilliseconds, [int] $markedOpponent.TickMilliseconds)
+        PlayerLabels               = $playerLabels
+        PlayerHeaderAttributes     = $colors.HeaderAttributes
+        PlayerColorAttributes      = $colors.TrailAttributes
+        PlayerTurboColorAttributes = $colors.TurboTrailAttributes
+        AiProfiles                 = @($primaryProfile, $markedProfile)
+    }
+}
+
+function Show-VersusMenu {
+    param(
+        [int] $BaseTickMilliseconds
+    )
+
+    $opponents = @(Get-VersusOpponents -BaseTickMilliseconds $BaseTickMilliseconds)
+    $selectedItem = 0
+    $markedOpponentIndex = -1
+
+    while ($true) {
+        Clear-Host
+        $height = [Console]::WindowHeight
+        $width = [Console]::WindowWidth
+        $title = "VERSUS"
+        $menuWidth = 0
+
+        foreach ($opponent in $opponents) {
+            $line = "[{0}] {1}" -f $opponent.Number, $opponent.Name
+            if ($line.Length -gt $menuWidth) {
+                $menuWidth = $line.Length
+            }
+        }
+        if ("[E] Back".Length -gt $menuWidth) {
+            $menuWidth = "[E] Back".Length
+        }
+
+        $firstRow = [Math]::Max(1, [Math]::Floor(($height - $opponents.Count - 7) / 2))
+        $menuColumn = [Math]::Max(0, [Math]::Floor(($width - $menuWidth) / 2))
+
+        Write-CenteredMenuLine -Text $title -Row $firstRow -Color Cyan
+        Write-CenteredMenuLine -Text "Select one AI for 1v1 bo3, or mark one and choose another for a 3-for-all." -Row ($firstRow + 2) -Color Gray
+
+        for ($index = 0; $index -lt $opponents.Count; $index++) {
+            $opponent = $opponents[$index]
+            $isSelected = ($selectedItem -eq $index)
+            $isMarked = ($markedOpponentIndex -eq $index)
+            $selectedColor = [ConsoleColor]::Yellow
+            $unselectedColor = [ConsoleColor]::Gray
+            if ($isMarked) {
+                $selectedColor = [ConsoleColor]::Cyan
+                $unselectedColor = [ConsoleColor]::Cyan
+            }
+
+            $hint = ""
+            if ($isSelected) {
+                if ($isMarked) {
+                    $hint = " (A/D unmark)"
+                }
+                elseif ($markedOpponentIndex -ge 0) {
+                    $hint = " (ENTER 3FA)"
+                }
+                else {
+                    $hint = " (ENTER 1v1)"
+                }
+            }
+
+            Write-MenuOptionLine `
+                -Text ("[{0}] {1}" -f $opponent.Number, $opponent.Name) `
+                -Row ($firstRow + 4 + $index) `
+                -Column $menuColumn `
+                -Selected $isSelected `
+                -Hint $hint `
+                -SelectedColor $selectedColor `
+                -UnselectedColor $unselectedColor
+        }
+
+        $backIndex = $opponents.Count
+        Write-MenuOptionLine `
+            -Text "[E] Back" `
+            -Row ($firstRow + 5 + $opponents.Count) `
+            -Column $menuColumn `
+            -Selected ($selectedItem -eq $backIndex) `
+            -Hint " (ENTER)"
+
+        Write-CenteredMenuLine -Text "UP/DOWN: select   LEFT/RIGHT: multi-select   ENTER/SPACE: select   E: back   ESC: quit" -Row ($firstRow + 7 + $opponents.Count) -Color DarkGray
+
+        $key = [Console]::ReadKey($true).Key
+        $number = Get-MenuNumberFromKey -Key $key
+        if ($number -ge 1 -and $number -le $opponents.Count) {
+            return [pscustomobject] @{
+                Action   = "Start"
+                Opponent = (New-VersusOpponentSelection -Opponents $opponents -SelectedIndex ($number - 1) -MarkedIndex $markedOpponentIndex)
+            }
+        }
+
+        switch ($key) {
+            "UpArrow" {
+                $selectedItem--
+                if ($selectedItem -lt 0) {
+                    $selectedItem = $backIndex
+                }
+            }
+            "W" {
+                $selectedItem--
+                if ($selectedItem -lt 0) {
+                    $selectedItem = $backIndex
+                }
+            }
+            "LeftArrow" {
+                if ($selectedItem -ne $backIndex) {
+                    if ($markedOpponentIndex -eq $selectedItem) {
+                        $markedOpponentIndex = -1
+                    }
+                    else {
+                        $markedOpponentIndex = $selectedItem
+                    }
+                }
+            }
+            "A" {
+                if ($selectedItem -ne $backIndex) {
+                    if ($markedOpponentIndex -eq $selectedItem) {
+                        $markedOpponentIndex = -1
+                    }
+                    else {
+                        $markedOpponentIndex = $selectedItem
+                    }
+                }
+            }
+            "DownArrow" {
+                $selectedItem++
+                if ($selectedItem -gt $backIndex) {
+                    $selectedItem = 0
+                }
+            }
+            "S" {
+                $selectedItem++
+                if ($selectedItem -gt $backIndex) {
+                    $selectedItem = 0
+                }
+            }
+            "RightArrow" {
+                if ($selectedItem -ne $backIndex) {
+                    if ($markedOpponentIndex -eq $selectedItem) {
+                        $markedOpponentIndex = -1
+                    }
+                    else {
+                        $markedOpponentIndex = $selectedItem
+                    }
+                }
+            }
+            "D" {
+                if ($selectedItem -ne $backIndex) {
+                    if ($markedOpponentIndex -eq $selectedItem) {
+                        $markedOpponentIndex = -1
+                    }
+                    else {
+                        $markedOpponentIndex = $selectedItem
+                    }
+                }
+            }
+            "Enter" {
+                if ($selectedItem -eq $backIndex) {
+                    return [pscustomobject] @{ Action = "Back"; Opponent = $null }
+                }
+
+                return [pscustomobject] @{
+                    Action   = "Start"
+                    Opponent = (New-VersusOpponentSelection -Opponents $opponents -SelectedIndex $selectedItem -MarkedIndex $markedOpponentIndex)
+                }
+            }
+            "Spacebar" {
+                if ($selectedItem -eq $backIndex) {
+                    return [pscustomobject] @{ Action = "Back"; Opponent = $null }
+                }
+
+                return [pscustomobject] @{
+                    Action   = "Start"
+                    Opponent = (New-VersusOpponentSelection -Opponents $opponents -SelectedIndex $selectedItem -MarkedIndex $markedOpponentIndex)
+                }
+            }
+            "E" {
+                return [pscustomobject] @{ Action = "Back"; Opponent = $null }
+            }
+            "Escape" {
+                return [pscustomobject] @{ Action = "Quit"; Opponent = $null }
+            }
+        }
+    }
+}
+
+function Show-VersusIntro {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Opponent
+    )
+
+    $opponentLine = if ($Opponent.PlayerCount -eq 3) {
+        "Opponents: {0} and {1}" -f $Opponent.PlayerLabels[1], $Opponent.PlayerLabels[2]
+    }
+    else {
+        "Opponent: {0}" -f $Opponent.Name
+    }
+
+    return Show-CampaignTextScreen `
+        -Title "VERSUS MODE" `
+        -Lines @(
+            $opponentLine,
+            "Standalone best of 3.",
+            "P1 controls: WASD to steer, F for turbo."
+        ) `
+        -Prompt "Press any key to launch   M: main menu   ESC: quit" `
+        -TitleColor Cyan
+}
+
+function Show-VersusRoundSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Opponent,
+
+        [Parameter(Mandatory = $true)]
+        $Result,
+
+        [int] $PlayerWins,
+        [int] $EnemyWins
+    )
+
+    if ($Result.Status -eq "Draw") {
+        $roundLine = "Round result: draw. No score awarded."
+    }
+    elseif ($Result.WinnerNumber -eq 1) {
+        $roundLine = "Round result: YOU scored."
+    }
+    else {
+        $roundLine = "Round result: {0} scored." -f $Opponent.PlayerLabels[$Result.WinnerNumber - 1]
+    }
+
+    return Show-CampaignTextScreen `
+        -Title ("VERSUS: {0}" -f $Opponent.Name) `
+        -Lines @(
+            $roundLine,
+            ("Match score: YOU {0}  {1} {2}" -f $PlayerWins, $Opponent.Name.ToUpperInvariant(), $EnemyWins)
+        ) `
+        -Prompt "Press any key for next round   M: main menu   ESC: quit" `
+        -TitleColor Yellow
+}
+
+function Show-VersusMatchComplete {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Opponent,
+
+        [int] $PlayerWins,
+        [int] $EnemyWins
+    )
+
+    if ($PlayerWins -gt $EnemyWins) {
+        $title = "OPPONENT DEREZZED"
+        $line = "You beat {0}." -f $Opponent.Name
+        $color = [ConsoleColor]::Green
+    }
+    else {
+        $title = "MATCH LOST"
+        $line = "{0} owned the grid." -f $Opponent.Name
+        $color = [ConsoleColor]::Red
+    }
+
+    return Show-CampaignTextScreen `
+        -Title $title `
+        -Lines @(
+            $line,
+            ("Final match score: YOU {0}  {1} {2}" -f $PlayerWins, $Opponent.Name.ToUpperInvariant(), $EnemyWins)
+        ) `
+        -Prompt "R: rematch   M: main menu   ESC: quit" `
+        -AllowRetry $true `
+        -AnyKeyContinues $false `
+        -TitleColor $color
+}
+
+function Start-VersusMatch {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Opponent,
+
+        [bool] $TurboEnabled
+    )
+
+    $introAction = Show-VersusIntro -Opponent $Opponent
+    if ($introAction -eq "Menu" -or $introAction -eq "Quit") {
+        return $introAction
+    }
+
+    [int[]] $scores = @(0, 0, 0)
+    $playerWins = 0
+    $enemyWins = 0
+
+    while ($playerWins -lt 2 -and $enemyWins -lt 2) {
+        Show-Countdown
+        $result = Start-Round `
+            -Scores $scores `
+            -PlayerCount $Opponent.PlayerCount `
+            -RoundTickMilliseconds $Opponent.TickMilliseconds `
+            -TurboEnabled $TurboEnabled `
+            -AiProfiles $Opponent.AiProfiles `
+            -PlayerLabels $Opponent.PlayerLabels `
+            -PlayerHeaderAttributes $Opponent.PlayerHeaderAttributes `
+            -PlayerColorAttributes $Opponent.PlayerColorAttributes `
+            -PlayerTurboColorAttributes $Opponent.PlayerTurboColorAttributes `
+            -HumanPlayerNumbers @(1) `
+            -EndWhenPlayerOneEliminated $true
+
+        if ($result.Status -eq "Quit") {
+            return "Quit"
+        }
+
+        if ($result.Status -eq "Resize" -or $result.Status -eq "TooSmall") {
+            $resizeAction = Show-RoundResult -Result $result
+            if ($resizeAction -eq "Restart") {
+                continue
+            }
+            return $resizeAction
+        }
+
+        if ($result.Status -eq "Winner") {
+            if ($result.WinnerNumber -eq 1) {
+                $playerWins++
+            }
+            else {
+                $enemyWins++
+            }
+
+            $scores[$result.WinnerNumber - 1]++
+        }
+
+        if ($playerWins -lt 2 -and $enemyWins -lt 2) {
+            $roundAction = Show-VersusRoundSummary `
+                -Opponent $Opponent `
+                -Result $result `
+                -PlayerWins $playerWins `
+                -EnemyWins $enemyWins
+            if ($roundAction -eq "Menu" -or $roundAction -eq "Quit") {
+                return $roundAction
+            }
+        }
+    }
+
+    return (Show-VersusMatchComplete -Opponent $Opponent -PlayerWins $playerWins -EnemyWins $enemyWins)
+}
+
 function Start-Tron {
     if ($env:OS -ne "Windows_NT") {
         throw "Tron.ps1 requires Windows and is intended to run in Windows Terminal."
@@ -1899,6 +2684,50 @@ function Start-Tron {
                 $turboEnabled = $menuResult.TurboEnabled
                 [int[]] $scores = @(0, 0, 0)
                 $showMenu = $false
+            }
+
+            if ($menuResult.Action -eq "Versus") {
+                $quitRequested = $false
+
+                while ($true) {
+                    $versusMenuResult = Show-VersusMenu -BaseTickMilliseconds $currentTickMilliseconds
+
+                    if ($versusMenuResult.Action -eq "Quit") {
+                        $quitRequested = $true
+                        break
+                    }
+
+                    if ($versusMenuResult.Action -eq "Back") {
+                        break
+                    }
+
+                    if ($versusMenuResult.Action -eq "Start") {
+                        while ($true) {
+                            $versusAction = Start-VersusMatch `
+                                -Opponent $versusMenuResult.Opponent `
+                                -TurboEnabled $turboEnabled
+
+                            if ($versusAction -eq "Retry") {
+                                continue
+                            }
+
+                            if ($versusAction -eq "Quit") {
+                                $quitRequested = $true
+                            }
+
+                            break
+                        }
+
+                        break
+                    }
+                }
+
+                if ($quitRequested) {
+                    break
+                }
+
+                $showMenu = $true
+                continue
             }
 
             if ($playerCount -eq 1) {
