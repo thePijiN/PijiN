@@ -9,32 +9,36 @@
 
 # SpaceFRACK
 
-A terminal space-prospecting game about squeezing value out of hostile planets,
-selling resources, buying consumables, completing contracts for upgrades, and not
-dying in the process.
+A PowerShell 5.1 space-prospecting game about squeezing value out of hostile
+planets, selling resources, buying supplies, completing contracts for upgrades,
+and not dying in the process.
 
-Made entirely in a portable PowerShell 5.1 script. No install required.
-Save files are made **manually** and go to `%APPDATA%` - no other residue.
+SpaceFRACK has two editions with the same gameplay and mechanics:
+
+| File                | Edition             | Description
+| `Spacegame.ps1`     | Terminal source     | Console menus, keyboard input, and ASCII art.
+| `SpaceFrack.exe`    | Terminal executable | Packaged version of `Spacegame.ps1`.
+| `SpaceFrack.ps1`    | UI source           | Mouse-driven WinForms interface and vector graphics.
+| `SpaceFrack_UI.exe` | UI executable       | Packaged version of `SpaceFrack.ps1`.
+
+Choose whichever interface you prefer. No install is required. 
+Save files are created **manually** under `%APPDATA%`. 
+The optional UI diagnostic log is stored there as well.
 
 ### For cautious pilots
 
-SpaceFRACK is distributed as both the original `.ps1` script and a compiled
-`.exe`. If running a PowerShell script makes you wary, that is reasonable.
+Each edition is distributed as an inspectable `.ps1` and a compiled `.exe`. If
+running a PowerShell script or an independently compiled executable makes you
+wary, that is reasonable.
 
 You can:
 
-1. Open `Spacegame.ps1` in a text editor and inspect it directly.
-2. Paste the script into ChatGPT, Claude, or whatever and ask it
+1. Inspect `Spacegame.ps1` for the Terminal Edition or `SpaceFrack.ps1` for the UI Edition.
+2. Paste the relevant script into ChatGPT, Claude, or whatever and ask it
    to summarize what the script does and whether it touches files, network, or
    system settings, etc.
-3. Build the `.exe` yourself from the reviewed `.ps1` using a PowerShell script
+3. Build the matching `.exe` yourself from the reviewed `.ps1` using a PowerShell script
    compiler such as `ps2exe`.
-
-Example shape:
-
-```powershell
-ps2exe .\Spacegame.ps1 .\SpaceFRACK.exe -title SpaceFRACK -description "Go forth and frack" -version 0.1
-```
 
 # About
 
@@ -82,11 +86,19 @@ contracts, and upgrades - but is still currently WIP.
 
 ## Getting Started
 
-Run the game with PowerShell:
+Run either edition with PowerShell:
 
 ```powershell
+# UI Edition
+.\SpaceFrack.ps1
+
+# Terminal Edition
 .\Spacegame.ps1
 ```
+
+Alternatively, launch `SpaceFrack_UI.exe` for the UI Edition or
+`SpaceFrack.exe` for the Terminal Edition.
+
 The repo also includes `SpaceFrackGuide.html`, a generated companion guide with
 planet data, hazard math, resource tables, trader stock, and contract details.
 Open it in a browser for a quick reference while playing for some insight.
@@ -109,6 +121,9 @@ Manage your `Health`, `Fuel`, `Weight`, and `Credits`, and frack strategically.
 - Cryo-Skipping can be utilized to skip the "idle" fracking mechanic, at the risk of HP depleting before FL does or WT capacity is reached.
 - Use WT strategically to not 'bust' on a cryo-skip on riskier planets - just hope the juice is worth the squeeze.
 - Fracking uninhabited Dwarf-class planets in Sol can yield upgrades.
+
+### Terminal Edition shortcuts
+
 - Append 'Q' to a sale selection to sell all of the selected item's quest surplus.
 - You can press Q instead of C to view Your or a Trader's Contracts.
 - Input `12` or `21` on the Trade Menu to both repair & refuel. 
@@ -150,7 +165,9 @@ Manage your `Health`, `Fuel`, `Weight`, and `Credits`, and frack strategically.
 	                                           - PijiN
 ```
 
-``` ASCII Spinning Drillbit Art
+### Terminal Edition ASCII drill art
+
+```text
 @"
 @--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%%--/%%%%%\ 
 ##/  ######/  ######/  ######/  ######/  #####\
