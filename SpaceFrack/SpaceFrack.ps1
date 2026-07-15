@@ -5,6 +5,8 @@ param(
     [switch] $DiagnosticLog,
     [switch] $SmokeTest,
     [switch] $ParityTest,
+    [switch] $RenderBenchmark,
+    [int] $BenchmarkFrames = 12,
     [string] $CapturePath = "",
     [int] $SoakTestSeconds = 0
 )
@@ -36,7 +38,7 @@ public sealed class SpaceFrackCanvas : Panel
 "@
 }
 
-$script:Version = "0.4.12-alpha"
+$script:Version = "0.4.15-alpha"
 $script:VirtualWidth = 1280.0
 $script:VirtualHeight = 720.0
 $script:ViewportBottom = 510.0
@@ -50,16 +52,56 @@ $script:LastTick = 0L
 $script:G = $null
 $script:Assets = @{}
 $script:HitTargets = New-Object System.Collections.ArrayList
+$script:HitTargetPool = New-Object System.Collections.ArrayList
 $script:MouseX = -1000.0
 $script:MouseY = -1000.0
 $script:Scale = 1.0
 $script:OffsetX = 0.0
 $script:OffsetY = 0.0
+$script:FrameShakeX = 0.0
+$script:FrameShakeY = 0.0
 $script:FatalError = $null
 $script:SmokePhase = 0
 $script:IsPainting = $false
 $script:Closing = $false
+$script:ReducedRenderQuality = $false
+$script:RenderSampleCount = 0
+$script:RenderAverageMs = 0.0
 $script:PlanetVisualCache = @{}
+$script:PlanetBitmapCache = @{}
+$script:PlanetBitmapCacheOrder = New-Object System.Collections.ArrayList
+$script:PlanetBitmapCacheBytes = 0L
+$script:PlanetTransitionBitmapCache = @{}
+$script:PlanetTransitionCacheOrder = New-Object System.Collections.ArrayList
+$script:PlanetTransitionCacheBytes = 0L
+$script:ImageAlphaAttributes = @{}
+$script:TraderVesselBitmapCache = @{}
+$script:TraderVesselBitmapDeviceScale = 0.0
+$script:HelmetBitmapCache = @{}
+$script:HelmetBitmapDeviceScale = 0.0
+$script:FrackPlanetBitmap = $null
+$script:FrackPlanetBitmapKey = ""
+$script:StarfieldPaths = @()
+$script:TwinkleStars = @()
+$script:Palette = @{
+    Black = [Drawing.Color]::FromArgb(3, 4, 7)
+    White = [Drawing.Color]::FromArgb(224, 232, 236)
+    Gray = [Drawing.Color]::FromArgb(130, 142, 150)
+    DarkGray = [Drawing.Color]::FromArgb(62, 70, 77)
+    Red = [Drawing.Color]::FromArgb(210, 48, 49)
+    DarkRed = [Drawing.Color]::FromArgb(117, 28, 30)
+    Yellow = [Drawing.Color]::FromArgb(238, 192, 76)
+    DarkYellow = [Drawing.Color]::FromArgb(148, 104, 39)
+    Green = [Drawing.Color]::FromArgb(72, 204, 126)
+    DarkGreen = [Drawing.Color]::FromArgb(35, 106, 70)
+    Cyan = [Drawing.Color]::FromArgb(83, 218, 235)
+    DarkCyan = [Drawing.Color]::FromArgb(38, 119, 133)
+    Blue = [Drawing.Color]::FromArgb(73, 125, 222)
+    DarkBlue = [Drawing.Color]::FromArgb(36, 59, 114)
+    Magenta = [Drawing.Color]::FromArgb(205, 91, 213)
+    DarkMagenta = [Drawing.Color]::FromArgb(104, 46, 113)
+}
+$script:RaritySortOrder = @{Upgrade=0;Consumable=1;SuperCommon=2;Common=3;Uncommon=4;Rare=5;SuperRare=6;UltraRare=7;Artifact=8;Oddity=9}
 
 function Write-GameLog {
     param([string] $Message,[switch] $Critical)
@@ -110,29 +152,24 @@ function Get-Ease {
     return $v * $v * (3.0 - (2.0 * $v))
 }
 
+function Register-RenderPerformance {
+    param([double] $Milliseconds)
+    if($RenderBenchmark -or $SmokeTest -or $ParityTest -or $script:ReducedRenderQuality){return}
+    $script:RenderSampleCount++
+    if($script:RenderSampleCount -le 2){return}
+    if($script:RenderAverageMs -le 0){$script:RenderAverageMs=$Milliseconds}else{$script:RenderAverageMs=($script:RenderAverageMs*0.84)+($Milliseconds*0.16)}
+    $engage=($script:RenderSampleCount -ge 5 -and $script:RenderAverageMs -gt 75.0) -or ($script:RenderSampleCount -ge 14 -and $script:RenderAverageMs -gt 34.0)
+    if($engage){
+        $script:ReducedRenderQuality=$true
+        if($null -ne $script:Timer){$script:Timer.Interval=33}
+        Write-GameLog ("Adaptive renderer engaged at {0:N1} ms/frame." -f $script:RenderAverageMs)
+    }
+}
+
 function Get-Color {
     param([string] $Name)
-
-    $colors = @{
-        Black = [Drawing.Color]::FromArgb(3, 4, 7)
-        White = [Drawing.Color]::FromArgb(224, 232, 236)
-        Gray = [Drawing.Color]::FromArgb(130, 142, 150)
-        DarkGray = [Drawing.Color]::FromArgb(62, 70, 77)
-        Red = [Drawing.Color]::FromArgb(210, 48, 49)
-        DarkRed = [Drawing.Color]::FromArgb(117, 28, 30)
-        Yellow = [Drawing.Color]::FromArgb(238, 192, 76)
-        DarkYellow = [Drawing.Color]::FromArgb(148, 104, 39)
-        Green = [Drawing.Color]::FromArgb(72, 204, 126)
-        DarkGreen = [Drawing.Color]::FromArgb(35, 106, 70)
-        Cyan = [Drawing.Color]::FromArgb(83, 218, 235)
-        DarkCyan = [Drawing.Color]::FromArgb(38, 119, 133)
-        Blue = [Drawing.Color]::FromArgb(73, 125, 222)
-        DarkBlue = [Drawing.Color]::FromArgb(36, 59, 114)
-        Magenta = [Drawing.Color]::FromArgb(205, 91, 213)
-        DarkMagenta = [Drawing.Color]::FromArgb(104, 46, 113)
-    }
-    if ($colors.ContainsKey($Name)) { return $colors[$Name] }
-    return $colors.White
+    if ($script:Palette.ContainsKey($Name)) { return $script:Palette[$Name] }
+    return $script:Palette.White
 }
 
 function New-Brush {
@@ -164,6 +201,20 @@ function Initialize-Assets {
 }
 
 function Remove-Assets {
+    foreach($bitmap in @($script:PlanetBitmapCache.Values)){if($bitmap -is [IDisposable]){$bitmap.Dispose()}}
+    $script:PlanetBitmapCache=@{};$script:PlanetBitmapCacheOrder.Clear();$script:PlanetBitmapCacheBytes=0L
+    foreach($bitmap in @($script:PlanetTransitionBitmapCache.Values)){if($bitmap -is [IDisposable]){$bitmap.Dispose()}}
+    $script:PlanetTransitionBitmapCache=@{};$script:PlanetTransitionCacheOrder.Clear();$script:PlanetTransitionCacheBytes=0L
+    foreach($attributes in @($script:ImageAlphaAttributes.Values)){if($attributes -is [IDisposable]){$attributes.Dispose()}}
+    $script:ImageAlphaAttributes=@{}
+    foreach($bitmap in @($script:TraderVesselBitmapCache.Values)){if($bitmap -is [IDisposable]){$bitmap.Dispose()}}
+    $script:TraderVesselBitmapCache=@{};$script:TraderVesselBitmapDeviceScale=0.0
+    foreach($bitmap in @($script:HelmetBitmapCache.Values)){if($bitmap -is [IDisposable]){$bitmap.Dispose()}}
+    $script:HelmetBitmapCache=@{};$script:HelmetBitmapDeviceScale=0.0
+    if($script:FrackPlanetBitmap -is [IDisposable]){$script:FrackPlanetBitmap.Dispose()}
+    $script:FrackPlanetBitmap=$null;$script:FrackPlanetBitmapKey=""
+    foreach($path in @($script:StarfieldPaths)){if($path -is [IDisposable]){$path.Dispose()}}
+    $script:StarfieldPaths=@();$script:TwinkleStars=@()
     foreach ($asset in @($script:Assets.Values)) {
         if ($asset -is [IDisposable]) { $asset.Dispose() }
     }
@@ -177,12 +228,13 @@ function Add-HitTarget {
         $Data = $null,
         [bool] $Enabled = $true
     )
-    [void]$script:HitTargets.Add([pscustomobject]@{
-        Action = $Action
-        Rectangle = $Rectangle
-        Data = $Data
-        Enabled = $Enabled
-    })
+    $index=$script:HitTargets.Count
+    if($index -ge $script:HitTargetPool.Count){
+        [void]$script:HitTargetPool.Add([pscustomobject]@{Action="";Rectangle=[Drawing.RectangleF]::Empty;Data=$null;Enabled=$false})
+    }
+    $target=$script:HitTargetPool[$index]
+    $target.Action=$Action;$target.Rectangle=$Rectangle;$target.Data=$Data;$target.Enabled=$Enabled
+    [void]$script:HitTargets.Add($target)
 }
 
 function Test-Hover {
@@ -1019,6 +1071,26 @@ function New-Starfield {
     return ,$stars
 }
 
+function Reset-StarfieldCache {
+    foreach($path in @($script:StarfieldPaths)){if($path -is [IDisposable]){$path.Dispose()}}
+    $script:StarfieldPaths=@()
+    if($null -eq $script:G){$script:TwinkleStars=@();return}
+    $paths=@(
+        (New-Object Drawing.Drawing2D.GraphicsPath),
+        (New-Object Drawing.Drawing2D.GraphicsPath),
+        (New-Object Drawing.Drawing2D.GraphicsPath)
+    )
+    $twinkle=New-Object System.Collections.ArrayList
+    for($index=0;$index -lt $script:G.Stars.Count;$index++){
+        $star=$script:G.Stars[$index]
+        $bucket=if($star.Alpha -lt 85){0}elseif($star.Alpha -lt 140){1}else{2}
+        $paths[$bucket].AddEllipse([single]$star.X,[single]$star.Y,[single]$star.Size,[single]$star.Size)
+        if(($index%14)-eq 0 -or $star.Size -ge 2.1){[void]$twinkle.Add($star)}
+    }
+    $script:StarfieldPaths=$paths
+    $script:TwinkleStars=@($twinkle)
+}
+
 function New-GameState {
     $systems=New-SystemMaster
     $state = @{
@@ -1131,6 +1203,7 @@ function New-GameState {
         InputLocked = 0.0
     }
     $script:G = $state
+    Reset-StarfieldCache
 }
 
 function Add-Notice {
@@ -1726,8 +1799,7 @@ function Get-CurrentTraderState {
 function Get-TraderStockRows {
     $state=Get-CurrentTraderState
     if($null -eq $state){return @()}
-    $rarityOrder=@{Upgrade=0;Consumable=1;SuperCommon=2;Common=3;Uncommon=4;Rare=5;SuperRare=6;UltraRare=7;Artifact=8;Oddity=9}
-    return @($state.Stock.Keys|Where-Object{[int]$state.Stock[$_] -gt 0}|ForEach-Object{[pscustomobject]@{Name=$_;Quantity=[int]$state.Stock[$_];Item=$script:G.ResourceMaster[$_]}}|Sort-Object @{Expression={if($rarityOrder.ContainsKey($_.Item.Rarity)){$rarityOrder[$_.Item.Rarity]}else{99}}},Name)
+    return @($state.Stock.Keys|Where-Object{[int]$state.Stock[$_] -gt 0}|ForEach-Object{[pscustomobject]@{Name=$_;Quantity=[int]$state.Stock[$_];Item=$script:G.ResourceMaster[$_]}}|Sort-Object @{Expression={if($script:RaritySortOrder.ContainsKey($_.Item.Rarity)){$script:RaritySortOrder[$_.Item.Rarity]}else{99}}},Name)
 }
 
 function Clear-TradeLedger {
@@ -2200,7 +2272,7 @@ function Update-Game {
     $script:G.TargetPanelExpand = if($script:G.Mode -in @("Cargo","Trader","Contracts","XRF","Status","Settings","Saves","Galaxy","Frack","Death")){1.0}else{0.0}
     $script:G.PanelExpand = Get-Lerp $script:G.PanelExpand $script:G.TargetPanelExpand $cameraAmount
 
-    foreach ($star in $script:G.Stars) {
+    foreach ($star in $script:TwinkleStars) {
         $star.Twinkle += $Delta * (0.7 + $star.Layer)
     }
     foreach ($entry in $script:G.Log) { $entry.Age += $Delta }
@@ -2241,24 +2313,46 @@ function Update-Game {
 
 function Draw-Starfield {
     param([Drawing.Graphics] $Graphics, [double] $TravelFactor = 0.0)
+    if($TravelFactor -le 0.01){
+        Fill-RectangleColor $Graphics (Get-Color Black) ([Drawing.RectangleF]::new(0,0,$script:VirtualWidth,$script:ViewportBottom+5))
+        $oldSmoothing=$Graphics.SmoothingMode
+        try{
+            $Graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::None
+            $starBrush=$script:Assets.FrameBrush
+            $starAlphas=@(48,82,118)
+            for($bucket=0;$bucket -lt $script:StarfieldPaths.Count;$bucket++){
+                $starBrush.Color=[Drawing.Color]::FromArgb($starAlphas[$bucket],178,204,219)
+                $Graphics.FillPath($starBrush,$script:StarfieldPaths[$bucket])
+            }
+        }finally{$Graphics.SmoothingMode=$oldSmoothing}
+        if(-not $script:ReducedRenderQuality){
+            foreach($star in $script:TwinkleStars){
+                $pulse=[Math]::Max(0.0,[Math]::Sin($star.Twinkle))*0.35
+                $alpha=[int](Get-ClampedValue ($star.Alpha*$pulse) 0 75)
+                if($alpha -gt 1){Fill-EllipseColor $Graphics ([Drawing.Color]::FromArgb($alpha,205,225,236)) ([Drawing.RectangleF]::new($star.X,$star.Y,$star.Size,$star.Size))}
+            }
+        }
+        return
+    }
     Fill-RectangleColor $Graphics (Get-Color Black) ([Drawing.RectangleF]::new(0, 0, $script:VirtualWidth, $script:ViewportBottom + 5))
+    $starIndex=0
     foreach ($star in $script:G.Stars) {
+        if($script:ReducedRenderQuality -and (($starIndex++ % 2) -ne 0)){continue}
         $twinkle = 0.65 + ([Math]::Sin($star.Twinkle) * 0.25)
         $alpha = [int](Get-ClampedValue ($star.Alpha * $twinkle) 10 220)
         $color = [Drawing.Color]::FromArgb($alpha, 178, 204, 219)
-        if ($TravelFactor -gt 0.01) {
+        if($TravelFactor -gt 0.01){
             $length = 2.0 + (65.0 * $TravelFactor * $star.Layer)
             $pen=$script:Assets.FramePen
             $pen.Color=$color;$pen.Width=[single][Math]::Max(0.5,$star.Size);$pen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid;$pen.StartCap=[Drawing.Drawing2D.LineCap]::Flat;$pen.EndCap=[Drawing.Drawing2D.LineCap]::Flat
             $Graphics.DrawLine($pen,$star.X-$length,$star.Y,$star.X+$length,$star.Y)
-        }
-        else {
-            Fill-EllipseColor $Graphics $color ([Drawing.RectangleF]::new($star.X, $star.Y, $star.Size, $star.Size))
+        }else{
+            Fill-EllipseColor $Graphics $color ([Drawing.RectangleF]::new($star.X,$star.Y,$star.Size,$star.Size))
         }
     }
 }
 
-function Draw-VectorHelmet {
+function Draw-VectorHelmetVector {
     param([Drawing.Graphics] $Graphics, [double] $CenterX, [double] $CenterY, [double] $Scale = 1.0)
 
     $saved = $Graphics.Save()
@@ -2426,6 +2520,34 @@ function Draw-VectorHelmet {
     }
     finally{$rimPen.Dispose();$rimLight.Dispose()}
     $Graphics.Restore($saved)
+}
+
+function Get-VectorHelmetBitmap {
+    param([double] $DeviceScale)
+    $renderScale=[Math]::Max(0.2,$DeviceScale)
+    $key=("{0:N3}" -f $renderScale)
+    if($script:HelmetBitmapCache.ContainsKey($key)){return $script:HelmetBitmapCache[$key]}
+    $size=[Math]::Max(100,[int][Math]::Ceiling(420.0*$renderScale))
+    $bitmap=New-Object Drawing.Bitmap($size,$size,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try{
+        $graphics.Clear([Drawing.Color]::Transparent)
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        Draw-VectorHelmetVector $graphics ($size/2.0) ($size/2.0) $renderScale
+    }finally{$graphics.Dispose()}
+    $script:HelmetBitmapCache[$key]=$bitmap
+    return $bitmap
+}
+
+function Draw-VectorHelmet {
+    param([Drawing.Graphics] $Graphics,[double] $CenterX,[double] $CenterY,[double] $Scale=1.0)
+    if([Math]::Abs($script:HelmetBitmapDeviceScale-$script:Scale) -gt 0.002){
+        foreach($cachedBitmap in @($script:HelmetBitmapCache.Values)){$cachedBitmap.Dispose()}
+        $script:HelmetBitmapCache=@{};$script:HelmetBitmapDeviceScale=$script:Scale
+    }
+    $bitmap=Get-VectorHelmetBitmap ($Scale*$script:Scale)
+    Draw-DeviceBitmap $Graphics $bitmap $CenterX $CenterY
 }
 
 function Get-PlanetVisualGeometry {
@@ -2631,7 +2753,7 @@ function Draw-PlanetRingLayer {
     }
 }
 
-function Draw-Planet {
+function Draw-PlanetVector {
     param(
         [Drawing.Graphics] $Graphics,
         $Planet,
@@ -2698,7 +2820,7 @@ function Draw-Planet {
     $Graphics.RotateTransform([single]$Planet.Visual.Tilt)
     $Graphics.TranslateTransform([single](-$CenterX),[single](-$CenterY))
     if ($Planet.Type -in @("Gas Giant", "Ice Giant")) {
-        $bandStep=if($Detailed){1}else{3}
+        $bandStep=if($Detailed){1}else{4}
         for($bandIndex=0;$bandIndex -lt $geometry.Bands.Count;$bandIndex+=$bandStep){
             $band=$geometry.Bands[$bandIndex];$lim=[Math]::Sqrt([Math]::Max(0.02,1.0-($band.Y*$band.Y)));$samples=if($Detailed){28}else{12}
             $points=New-Object Drawing.PointF[] (($samples+1)*2)
@@ -2721,7 +2843,7 @@ function Draw-Planet {
         if($Planet.Name -eq "Earth"){
             Draw-EarthSurface $Graphics $CenterX $CenterY $Radius $widthScale $Alpha $Detailed
         }else{
-            $featureCount=if($Detailed){$geometry.Patches.Count}else{7}
+            $featureCount=if($Detailed){$geometry.Patches.Count}else{4}
             $featureColor=if($Planet.Visual.Feature -eq "Oceans"){Get-Color Green}elseif($Planet.Visual.Feature -eq "Lava"){Get-Color Yellow}else{Get-Color $Planet.Visual.Secondary}
             for($patchIndex=0;$patchIndex -lt $featureCount;$patchIndex++){
                 $patch=$geometry.Patches[$patchIndex];$shapePoints=New-Object Drawing.PointF[] $patch.Shape.Length
@@ -2749,7 +2871,7 @@ function Draw-Planet {
                 }
             }finally{$featurePen.Dispose()}
         }
-        if($Planet.Visual.Feature -in @("Clouds","Oceans")){
+        if($Detailed -and $Planet.Visual.Feature -in @("Clouds","Oceans")){
             $cloudPen=New-Object Drawing.Pen((Get-AlphaColor (Get-Color White) ([int]($Alpha*0.24))),[single][Math]::Max(1,$Radius*0.025))
             try{
                 for($bandIndex=1;$bandIndex -lt $geometry.Bands.Count;$bandIndex+=3){
@@ -2775,7 +2897,151 @@ function Draw-Planet {
     if ($showRings) { Draw-PlanetRingLayer $Graphics $Planet $CenterX $CenterY $Radius $Alpha $true }
 }
 
-function Draw-TraderVessel {
+function Get-PlanetBitmap {
+    param($Planet,[bool] $Detailed,[double] $Radius,[double] $DeviceScale)
+    $pixelRadius=[Math]::Max(2,[int][Math]::Round($Radius*$DeviceScale))
+    $key=("{0}|{1}|{2}" -f $Planet.Name,$Detailed,$pixelRadius)
+    if($script:PlanetBitmapCache.ContainsKey($key)){return $script:PlanetBitmapCache[$key]}
+    $size=[Math]::Max(16,[int][Math]::Ceiling($pixelRadius*4.0))
+    $bitmap=New-Object Drawing.Bitmap($size,$size,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try{
+        $graphics.Clear([Drawing.Color]::Transparent)
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        Draw-PlanetVector $graphics $Planet ($size/2.0) ($size/2.0) $pixelRadius 255 $Detailed
+    }finally{$graphics.Dispose()}
+    $script:PlanetBitmapCache[$key]=$bitmap
+    $script:PlanetBitmapCacheBytes+=[long]$bitmap.Width*[long]$bitmap.Height*4L
+    [void]$script:PlanetBitmapCacheOrder.Add($key)
+    while($script:PlanetBitmapCacheOrder.Count -gt 18 -or ($script:PlanetBitmapCacheBytes -gt 48MB -and $script:PlanetBitmapCacheOrder.Count -gt 1)){
+        $oldKey=[string]$script:PlanetBitmapCacheOrder[0];$script:PlanetBitmapCacheOrder.RemoveAt(0)
+        if($script:PlanetBitmapCache.ContainsKey($oldKey)){
+            $oldBitmap=$script:PlanetBitmapCache[$oldKey]
+            $script:PlanetBitmapCacheBytes-=[long]$oldBitmap.Width*[long]$oldBitmap.Height*4L
+            $oldBitmap.Dispose();$script:PlanetBitmapCache.Remove($oldKey)
+        }
+    }
+    return $bitmap
+}
+
+function Get-FrackPlanetBitmap {
+    param($Planet,[double] $DeviceScale)
+    $renderScale=[Math]::Max(0.25,$DeviceScale)
+    $key=("{0}|{1:N3}" -f $Planet.Name,$renderScale)
+    if($script:FrackPlanetBitmap -is [Drawing.Bitmap] -and $script:FrackPlanetBitmapKey -eq $key){return $script:FrackPlanetBitmap}
+    if($script:FrackPlanetBitmap -is [IDisposable]){$script:FrackPlanetBitmap.Dispose()}
+    $width=[Math]::Max(1,[int][Math]::Ceiling($script:VirtualWidth*$renderScale))
+    $height=[Math]::Max(1,[int][Math]::Ceiling(($script:ViewportBottom+5)*$renderScale))
+    $bitmap=New-Object Drawing.Bitmap($width,$height,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try{
+        $graphics.Clear([Drawing.Color]::Transparent)
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        Draw-PlanetVector $graphics $Planet (640.0*$renderScale) ($script:FrackPlanetCenterY*$renderScale) ($script:FrackPlanetRadius*$renderScale) 255 $true
+    }finally{$graphics.Dispose()}
+    $script:FrackPlanetBitmap=$bitmap
+    $script:FrackPlanetBitmapKey=$key
+    return $bitmap
+}
+
+function Get-PlanetTransitionBitmap {
+    param($Planet,[bool] $Detailed)
+    $key=("{0}|{1}" -f $Planet.Name,$Detailed)
+    if($script:PlanetTransitionBitmapCache.ContainsKey($key)){return $script:PlanetTransitionBitmapCache[$key]}
+    $size=if($Detailed){760}else{160}
+    $radius=if($Detailed){190.0}else{40.0}
+    $bitmap=New-Object Drawing.Bitmap($size,$size,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try{
+        $graphics.Clear([Drawing.Color]::Transparent)
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        Draw-PlanetVector $graphics $Planet ($size/2.0) ($size/2.0) $radius 255 $Detailed
+    }finally{$graphics.Dispose()}
+    $script:PlanetTransitionBitmapCache[$key]=$bitmap
+    $script:PlanetTransitionCacheBytes+=[long]$bitmap.Width*[long]$bitmap.Height*4L
+    [void]$script:PlanetTransitionCacheOrder.Add($key)
+    while($script:PlanetTransitionCacheOrder.Count -gt 32 -or ($script:PlanetTransitionCacheBytes -gt 32MB -and $script:PlanetTransitionCacheOrder.Count -gt 1)){
+        $oldKey=[string]$script:PlanetTransitionCacheOrder[0];$script:PlanetTransitionCacheOrder.RemoveAt(0)
+        if($script:PlanetTransitionBitmapCache.ContainsKey($oldKey)){
+            $oldBitmap=$script:PlanetTransitionBitmapCache[$oldKey]
+            $script:PlanetTransitionCacheBytes-=[long]$oldBitmap.Width*[long]$oldBitmap.Height*4L
+            $oldBitmap.Dispose();$script:PlanetTransitionBitmapCache.Remove($oldKey)
+        }
+    }
+    return $bitmap
+}
+
+function Get-ImageAlphaAttributes {
+    param([int] $Alpha)
+    $bucket=[int](Get-ClampedValue ([Math]::Round($Alpha/16.0)*16.0) 16 240)
+    if($script:ImageAlphaAttributes.ContainsKey($bucket)){return $script:ImageAlphaAttributes[$bucket]}
+    $matrix=New-Object Drawing.Imaging.ColorMatrix
+    $matrix.Matrix33=[single]($bucket/255.0)
+    $attributes=New-Object Drawing.Imaging.ImageAttributes
+    $attributes.SetColorMatrix($matrix,[Drawing.Imaging.ColorMatrixFlag]::Default,[Drawing.Imaging.ColorAdjustType]::Bitmap)
+    $script:ImageAlphaAttributes[$bucket]=$attributes
+    return $attributes
+}
+
+function Draw-DeviceBitmap {
+    param([Drawing.Graphics] $Graphics,[Drawing.Bitmap] $Bitmap,[double] $LogicalCenterX,[double] $LogicalCenterY)
+    $physicalX=$script:OffsetX+(($LogicalCenterX+$script:FrameShakeX)*$script:Scale)
+    $physicalY=$script:OffsetY+(($LogicalCenterY+$script:FrameShakeY)*$script:Scale)
+    $saved=$Graphics.Save()
+    try{
+        $Graphics.ResetTransform()
+        $Graphics.CompositingMode=[Drawing.Drawing2D.CompositingMode]::SourceOver
+        $Graphics.DrawImageUnscaled($Bitmap,[int][Math]::Round($physicalX-($Bitmap.Width/2.0)),[int][Math]::Round($physicalY-($Bitmap.Height/2.0)))
+    }finally{$Graphics.Restore($saved)}
+}
+
+function Draw-Planet {
+    param(
+        [Drawing.Graphics] $Graphics,
+        $Planet,
+        [double] $CenterX,
+        [double] $CenterY,
+        [double] $Radius,
+        [int] $Alpha = 255,
+        [bool] $Detailed = $true
+    )
+    if($Radius -le 1 -or $Alpha -le 0){return}
+    $cameraStable=$null -ne $script:G -and $null -eq $script:G.Travel -and [Math]::Abs($script:G.SystemBlend-$script:G.TargetSystemBlend) -lt 0.001 -and [Math]::Abs($script:G.TraderBlend-$script:G.TargetTraderBlend) -lt 0.001 -and [Math]::Abs($script:G.CloseZoom-$script:G.TargetCloseZoom) -lt 0.001
+    if($cameraStable -and $Alpha -ge 250 -and [Math]::Abs($CenterX-640.0) -lt 2.0 -and [Math]::Abs($CenterY-$script:FrackPlanetCenterY) -lt 3.0 -and [Math]::Abs($Radius-$script:FrackPlanetRadius) -lt 3.0){
+        $bitmap=Get-FrackPlanetBitmap $Planet $script:Scale
+        $originX=$script:OffsetX+($script:FrameShakeX*$script:Scale)
+        $originY=$script:OffsetY+($script:FrameShakeY*$script:Scale)
+        $saved=$Graphics.Save()
+        try{$Graphics.ResetTransform();$Graphics.DrawImageUnscaled($bitmap,[int][Math]::Round($originX),[int][Math]::Round($originY))}finally{$Graphics.Restore($saved)}
+        return
+    }
+    if($cameraStable -and $Alpha -ge 250 -and -not $Detailed -and $Radius -le 22.0){
+        $bitmap=Get-PlanetBitmap $Planet $false $Radius 1.0
+        $Graphics.DrawImage($bitmap,[Drawing.RectangleF]::new([single]($CenterX-($bitmap.Width/2.0)),[single]($CenterY-($bitmap.Height/2.0)),[single]$bitmap.Width,[single]$bitmap.Height))
+        return
+    }
+    if($cameraStable -and $Alpha -ge 250 -and $Radius -le 220.0){
+        $bitmap=Get-PlanetBitmap $Planet $Detailed $Radius $script:Scale
+        Draw-DeviceBitmap $Graphics $bitmap $CenterX $CenterY
+        return
+    }
+    if(-not $cameraStable -and $script:Scale -le 1.25 -and $Radius -le 300.0){
+        $bitmap=Get-PlanetTransitionBitmap $Planet $Detailed
+        $baseRadius=if($Detailed){190.0}else{40.0}
+        $bitmapScale=$Radius/$baseRadius
+        $width=[Math]::Max(1,[int][Math]::Round($bitmap.Width*$bitmapScale));$height=[Math]::Max(1,[int][Math]::Round($bitmap.Height*$bitmapScale))
+        $destination=[Drawing.Rectangle]::new([int][Math]::Round($CenterX-($width/2.0)),[int][Math]::Round($CenterY-($height/2.0)),$width,$height)
+        if($Alpha -ge 250){$Graphics.DrawImage($bitmap,$destination)}
+        else{$Graphics.DrawImage($bitmap,$destination,0,0,$bitmap.Width,$bitmap.Height,[Drawing.GraphicsUnit]::Pixel,(Get-ImageAlphaAttributes $Alpha))}
+        return
+    }
+    Draw-PlanetVector $Graphics $Planet $CenterX $CenterY $Radius $Alpha $Detailed
+}
+
+function Draw-TraderVesselVector {
     param([Drawing.Graphics] $Graphics, [double] $X, [double] $Y, [double] $Scale, [Drawing.Color] $Accent)
     $saved=$Graphics.Save()
     $Graphics.TranslateTransform([single]$X, [single]$Y)
@@ -2859,6 +3125,42 @@ function Draw-TraderVessel {
         $darkPen.Dispose();$midPen.Dispose();$lightPen.Dispose();$accentPen.Dispose()
         $Graphics.Restore($saved)
     }
+}
+
+function Get-TraderVesselBitmap {
+    param([Drawing.Color] $Accent,[double] $DeviceScale)
+    $renderScale=[Math]::Max(0.08,$DeviceScale)
+    $key=("{0}|{1}|{2}|{3:N3}" -f $Accent.R,$Accent.G,$Accent.B,$renderScale)
+    if($script:TraderVesselBitmapCache.ContainsKey($key)){return $script:TraderVesselBitmapCache[$key]}
+    # The docking modules extend to roughly +/-222 local units. Keep transparent
+    # padding around the complete painted bounds so the stationary cache matches
+    # the unclipped transition vector.
+    $size=[Math]::Max(32,[int][Math]::Ceiling(480.0*$renderScale))
+    $bitmap=New-Object Drawing.Bitmap($size,$size,[Drawing.Imaging.PixelFormat]::Format32bppPArgb)
+    $graphics=[Drawing.Graphics]::FromImage($bitmap)
+    try{
+        $graphics.Clear([Drawing.Color]::Transparent)
+        $graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
+        Draw-TraderVesselVector $graphics ($size/2.0) ($size/2.0) $renderScale ([Drawing.Color]::FromArgb(255,$Accent.R,$Accent.G,$Accent.B))
+    }finally{$graphics.Dispose()}
+    $script:TraderVesselBitmapCache[$key]=$bitmap
+    return $bitmap
+}
+
+function Draw-TraderVessel {
+    param([Drawing.Graphics] $Graphics,[double] $X,[double] $Y,[double] $Scale,[Drawing.Color] $Accent)
+    $cameraStable=$null -ne $script:G -and $null -eq $script:G.Travel -and [Math]::Abs($script:G.SystemBlend-$script:G.TargetSystemBlend) -lt 0.001 -and [Math]::Abs($script:G.TraderBlend-$script:G.TargetTraderBlend) -lt 0.001 -and [Math]::Abs($script:G.CloseZoom-$script:G.TargetCloseZoom) -lt 0.001
+    if($cameraStable -and $Accent.A -ge 250){
+        if([Math]::Abs($script:TraderVesselBitmapDeviceScale-$script:Scale) -gt 0.002){
+            foreach($cachedBitmap in @($script:TraderVesselBitmapCache.Values)){$cachedBitmap.Dispose()}
+            $script:TraderVesselBitmapCache=@{};$script:TraderVesselBitmapDeviceScale=$script:Scale
+        }
+        $bitmap=Get-TraderVesselBitmap $Accent ($Scale*$script:Scale)
+        Draw-DeviceBitmap $Graphics $bitmap $X $Y
+        return
+    }
+    Draw-TraderVesselVector $Graphics $X $Y $Scale $Accent
 }
 
 function Draw-SystemView {
@@ -2970,6 +3272,17 @@ function Draw-CameraNavigation {
     $starColor=Get-Color $system.StarColor
     $systemBlend=Get-ClampedValue $script:G.SystemBlend 0 1
     $current=Get-Planet
+    $cameraStable=$null -eq $script:G.Travel -and [Math]::Abs($script:G.SystemBlend-$script:G.TargetSystemBlend) -lt 0.001 -and [Math]::Abs($script:G.TraderBlend-$script:G.TargetTraderBlend) -lt 0.001 -and [Math]::Abs($script:G.CloseZoom-$script:G.TargetCloseZoom) -lt 0.001
+    if($cameraStable -and $systemBlend -lt 0.001){
+        $x=Get-Lerp 640.0 395.0 $script:G.TraderBlend
+        $y=Get-Lerp 245.0 $script:FrackPlanetCenterY $script:G.CloseZoom
+        $radius=Get-Lerp (Get-Lerp 166.0 126.0 $script:G.TraderBlend) $script:FrackPlanetRadius $script:G.CloseZoom
+        Draw-Planet $Graphics $current $x $y $radius 255 $true
+        if($current.Inhabited -and $script:G.CloseZoom -lt 0.3){
+            Draw-TraderVessel $Graphics (Get-Lerp 885.0 850.0 $script:G.TraderBlend) 225 (Get-Lerp 0.28 1.0 $script:G.TraderBlend) (Get-Color $current.PlanetColor)
+        }
+        return
+    }
     $currentSystemX=Get-SystemPlanetX $current
     $travelProgress=-1.0
     $destinationName=""
@@ -2996,8 +3309,9 @@ function Draw-CameraNavigation {
         $lineEnd=$focusScreenX+((1218.0-$currentSystemX)*$cameraZoom)
     }
     if($mapAlpha -gt 2){
-        $linePen=New-Object Drawing.Pen([Drawing.Color]::FromArgb([int]($mapAlpha*0.22),91,130,139),1)
-        try{$Graphics.DrawLine($linePen,$lineStart,245,$lineEnd,245)}finally{$linePen.Dispose()}
+        $linePen=$script:Assets.FramePen
+        $linePen.Color=[Drawing.Color]::FromArgb([int]($mapAlpha*0.22),91,130,139);$linePen.Width=1;$linePen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid
+        $Graphics.DrawLine($linePen,$lineStart,245,$lineEnd,245)
         $starX=if($travelProgress -ge 0){640.0+((74.0-$cameraCenter)*$cameraZoom)}else{$focusScreenX+((74.0-$currentSystemX)*$cameraZoom)}
         $starRadius=40.0*$cameraZoom
         if($starX+$starRadius -gt -20 -and $starX-$starRadius -lt 1300){
@@ -3040,7 +3354,8 @@ function Draw-CameraNavigation {
         }
 
         if($alpha -gt 2 -and $x+$radius -gt -80 -and $x-$radius -lt 1360){
-            Draw-Planet $Graphics $planet $x $y $radius $alpha ($radius -gt 22)
+            $transitionFocus=$script:Scale -le 1.25 -and ($name -eq $script:G.Player.Location -or ($travelProgress -ge 0 -and $name -eq $destinationName)) -and $radius -gt 50 -and $radius -le 300
+            Draw-Planet $Graphics $planet $x $y $radius $alpha (($cameraStable -and $radius -gt 22) -or $transitionFocus)
         }
 
         if($script:G.Mode -eq "System" -and $systemBlend -gt 0.86){
@@ -3050,8 +3365,9 @@ function Draw-CameraNavigation {
             Add-HitTarget "SelectPlanet" $hit $name $true
             if(Test-Hover $hit){$script:G.HoveredPlanet=$name}
             if($name -eq $script:G.Player.Location){
-                $ring=New-Object Drawing.Pen([Drawing.Color]::FromArgb($mapAlpha,78,232,236),2)
-                try{$Graphics.DrawEllipse($ring,$systemX-$baseRadius-7,245-$baseRadius-7,($baseRadius+7)*2,($baseRadius+7)*2)}finally{$ring.Dispose()}
+                $ring=$script:Assets.FramePen
+                $ring.Color=[Drawing.Color]::FromArgb($mapAlpha,78,232,236);$ring.Width=2;$ring.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid
+                $Graphics.DrawEllipse($ring,$systemX-$baseRadius-7,245-$baseRadius-7,($baseRadius+7)*2,($baseRadius+7)*2)
             }
         }
     }
@@ -3077,15 +3393,15 @@ function Draw-CockpitShell {
     $metal = [Drawing.Color]::FromArgb(235,31,38,42)
     $dark = [Drawing.Color]::FromArgb(245,11,16,19)
     Fill-RectangleColor $Graphics $metal ([Drawing.RectangleF]::new(0,$top,1280,$script:VirtualHeight-$top))
-    $rimPen = New-Object Drawing.Pen([Drawing.Color]::FromArgb(103,124,130),5)
-    try { $Graphics.DrawLine($rimPen,0,$top,1280,$top) }
-    finally { $rimPen.Dispose() }
+    $rimPen=$script:Assets.FramePen
+    $rimPen.Color=[Drawing.Color]::FromArgb(103,124,130);$rimPen.Width=5;$rimPen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid
+    $Graphics.DrawLine($rimPen,0,$top,1280,$top)
 
     $mfd = [Drawing.RectangleF]::new(220,$script:G.MfdTop,790,696-$script:G.MfdTop)
     Fill-RectangleColor $Graphics $dark $mfd
-    $mfdPen = New-Object Drawing.Pen([Drawing.Color]::FromArgb(53,132,139),2)
-    try { $Graphics.DrawRectangle($mfdPen,$mfd.X,$mfd.Y,$mfd.Width,$mfd.Height) }
-    finally { $mfdPen.Dispose() }
+    $mfdPen=$script:Assets.FramePen
+    $mfdPen.Color=[Drawing.Color]::FromArgb(53,132,139);$mfdPen.Width=2;$mfdPen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid
+    $Graphics.DrawRectangle($mfdPen,$mfd.X,$mfd.Y,$mfd.Width,$mfd.Height)
     Fill-RectangleColor $Graphics ([Drawing.Color]::FromArgb(160,37,93,99)) ([Drawing.RectangleF]::new(220,$script:G.MfdTop,790,3))
 
     $cockpitInputEnabled=-not $script:G.CryoActive
@@ -3135,8 +3451,9 @@ function Draw-FrackingMarquee {
         Draw-Text $Graphics $hazardLabel $script:Assets.FontSmallBold $black ([Drawing.RectangleF]::new($baseX+436,$top+1,76,$height-2)) $script:Assets.Center
     }
     $Graphics.Restore($saved)
-    $edgePen=New-Object Drawing.Pen([Drawing.Color]::FromArgb(210,10,12,12),1)
-    try{$Graphics.DrawLine($edgePen,0,$top,1280,$top);$Graphics.DrawLine($edgePen,0,$top+$height-1,1280,$top+$height-1)}finally{$edgePen.Dispose()}
+    $edgePen=$script:Assets.FramePen
+    $edgePen.Color=[Drawing.Color]::FromArgb(210,10,12,12);$edgePen.Width=1;$edgePen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid
+    $Graphics.DrawLine($edgePen,0,$top,1280,$top);$Graphics.DrawLine($edgePen,0,$top+$height-1,1280,$top+$height-1)
 }
 
 function Draw-ShipStatus {
@@ -3212,8 +3529,7 @@ function Draw-MfdSystem {
 }
 
 function Get-SortedCargo {
-    $order=@{Upgrade=1;Consumable=2;SuperCommon=3;Common=4;Uncommon=5;Rare=6;SuperRare=7;UltraRare=8;Artifact=9;Oddity=10}
-    return @($script:G.Inventory.Keys|ForEach-Object{$item=$script:G.ResourceMaster[$_];[pscustomobject]@{Name=$_;Quantity=$script:G.Inventory[$_];Item=$item;Order=if($order.ContainsKey($item.Rarity)){$order[$item.Rarity]}else{99}}}|Sort-Object Order,Name)
+    return @($script:G.Inventory.Keys|ForEach-Object{$item=$script:G.ResourceMaster[$_];[pscustomobject]@{Name=$_;Quantity=$script:G.Inventory[$_];Item=$item;Order=if($script:RaritySortOrder.ContainsKey($item.Rarity)){$script:RaritySortOrder[$item.Rarity]}else{99}}}|Sort-Object Order,Name)
 }
 
 function Draw-MfdCargo {
@@ -3526,7 +3842,8 @@ function Draw-MfdSettings {
     $knobX=$track.X+($track.Width*($vibrationValue/100.0))
     Fill-EllipseColor $Graphics $(if($script:G.DrillVibration){Get-Color White}else{Get-Color Gray}) ([Drawing.RectangleF]::new($knobX-6,$track.Y-3,12,14))
     Add-HitTarget "None" $script:G.VibrationSliderRect $null $true
-    Draw-Text $Graphics ("Version {0} | Save directory: APPDATA/spacefrack" -f $script:Version) $script:Assets.FontTiny (Get-Color DarkGray) ([Drawing.RectangleF]::new(462,$top+204,350,16))
+    $rendererLabel=if($script:ReducedRenderQuality){"AUTO REDUCED"}else{"AUTO FULL"}
+    Draw-Text $Graphics ("Version {0} | Renderer: {1} | Saves: APPDATA/spacefrack" -f $script:Version,$rendererLabel) $script:Assets.FontTiny (Get-Color DarkGray) ([Drawing.RectangleF]::new(462,$top+204,370,16))
     Draw-Button $Graphics ([Drawing.RectangleF]::new(837,$top+216,145,34)) "BACK" "CloseSettings" $null $true (Get-Color Cyan)
 }
 
@@ -3624,12 +3941,13 @@ function Draw-DeathOverlay {
 
 function Paint-Game {
     param([Drawing.Graphics] $Graphics)
+    # Text and geometry quality stay consistent on every renderer tier. The adaptive
+    # path reduces cadence and decorative animation, not legibility or edge quality.
     $Graphics.SmoothingMode=[Drawing.Drawing2D.SmoothingMode]::AntiAlias
     $Graphics.PixelOffsetMode=[Drawing.Drawing2D.PixelOffsetMode]::HighQuality
     $Graphics.TextRenderingHint=[Drawing.Text.TextRenderingHint]::ClearTypeGridFit
     $script:HitTargets.Clear()
     $script:G.HoveredPlanet=""
-
     $clientW=[double]$script:Canvas.ClientSize.Width
     $clientH=[double]$script:Canvas.ClientSize.Height
     $script:Scale=[Math]::Min($clientW/$script:VirtualWidth,$clientH/$script:VirtualHeight)
@@ -3647,6 +3965,7 @@ function Paint-Game {
     }
     $shakeX=$vibrationX+$(if($script:G.Shake -gt 0){Get-RandomDouble (-$script:G.Shake) $script:G.Shake}else{0})
     $shakeY=$vibrationY+$(if($script:G.Shake -gt 0){Get-RandomDouble (-$script:G.Shake*0.6) ($script:G.Shake*0.6)}else{0})
+    $script:FrameShakeX=$shakeX;$script:FrameShakeY=$shakeY
     $Graphics.TranslateTransform([single]$shakeX,[single]$shakeY)
 
     if($script:G.Mode -eq "Title"){
@@ -3680,6 +3999,61 @@ function Paint-Game {
         Fill-RectangleColor $Graphics ([Drawing.Color]::FromArgb($pulse,180,0,8)) ([Drawing.RectangleF]::new(0,0,1280,720))
     }
     $Graphics.Restore($saved)
+}
+
+function Invoke-RenderBenchmark {
+    $frameCount=[Math]::Max(3,$BenchmarkFrames)
+    $scenarios=@(
+        @{Name="Title";Mode="Title";SystemBlend=0.0;CloseZoom=0.0;TraderBlend=0.0;Fracking=$false},
+        @{Name="Orbit";Mode="Orbit";SystemBlend=0.0;CloseZoom=0.0;TraderBlend=0.0;Fracking=$false},
+        @{Name="SystemPan";Mode="System";SystemBlend=0.5;CloseZoom=0.0;TraderBlend=0.0;Fracking=$false},
+        @{Name="System";Mode="System";SystemBlend=1.0;CloseZoom=0.0;TraderBlend=0.0;Fracking=$false},
+        @{Name="Trader";Mode="Trader";SystemBlend=0.0;CloseZoom=0.0;TraderBlend=1.0;Fracking=$false},
+        @{Name="FrackZoom";Mode="Frack";SystemBlend=0.0;CloseZoom=0.5;TraderBlend=0.0;Fracking=$true},
+        @{Name="Frack";Mode="Frack";SystemBlend=0.0;CloseZoom=1.0;TraderBlend=0.0;Fracking=$true}
+    )
+    foreach($size in @([Drawing.Size]::new(1280,720),[Drawing.Size]::new(2560,1440))){
+        $script:Form.ClientSize=$size
+        $script:Form.PerformLayout()
+        $bitmap=New-Object Drawing.Bitmap($size.Width,$size.Height)
+        $graphics=[Drawing.Graphics]::FromImage($bitmap)
+        try{
+            foreach($scenario in $scenarios){
+                $script:G.Mode=$scenario.Mode
+                $script:G.SystemBlend=$scenario.SystemBlend
+                $script:G.TargetSystemBlend=$(if($scenario.Name -eq "SystemPan"){1.0}else{$scenario.SystemBlend})
+                $script:G.CloseZoom=$scenario.CloseZoom
+                $script:G.TargetCloseZoom=$(if($scenario.Name -eq "FrackZoom"){1.0}else{$scenario.CloseZoom})
+                $script:G.TraderBlend=$scenario.TraderBlend
+                $script:G.TargetTraderBlend=$scenario.TraderBlend
+                $script:G.FrackingActive=$scenario.Fracking
+                Paint-Game $graphics
+                $stopwatch=[Diagnostics.Stopwatch]::StartNew()
+                for($frame=0;$frame -lt $frameCount;$frame++){
+                    $script:G.Time+=0.0166667
+                    Paint-Game $graphics
+                }
+                $stopwatch.Stop()
+                Write-GameLog ("BENCH {0} {1}x{2}: {3:N2} ms/frame ({4:N1} fps)" -f $scenario.Name,$size.Width,$size.Height,($stopwatch.Elapsed.TotalMilliseconds/$frameCount),($frameCount/[Math]::Max(0.001,$stopwatch.Elapsed.TotalSeconds)))
+            }
+            if($size.Width -eq 1280){
+                $components=@(
+                    @{Name="Starfield";Run={Draw-Starfield $graphics 0.0}},
+                    @{Name="Camera";Run={Draw-CameraNavigation $graphics}},
+                    @{Name="Cockpit";Run={Draw-CockpitShell $graphics}},
+                    @{Name="Marquee";Run={Draw-FrackingMarquee $graphics}},
+                    @{Name="FrackMFD";Run={Draw-MfdFrack $graphics}}
+                )
+                foreach($component in $components){
+                    & $component.Run
+                    $stopwatch=[Diagnostics.Stopwatch]::StartNew()
+                    for($frame=0;$frame -lt $frameCount;$frame++){& $component.Run}
+                    $stopwatch.Stop()
+                    Write-GameLog ("BENCH PART {0}: {1:N2} ms" -f $component.Name,($stopwatch.Elapsed.TotalMilliseconds/$frameCount))
+                }
+            }
+        }finally{$graphics.Dispose();$bitmap.Dispose()}
+    }
 }
 
 function Invoke-Action {
@@ -3887,6 +4261,13 @@ function Start-SpaceFrack {
     Initialize-Assets
     New-GameState
     Refresh-SaveFiles
+    if($RenderBenchmark){
+        Start-NewRun
+        Invoke-RenderBenchmark
+        Remove-Assets
+        $script:Form.Dispose()
+        return
+    }
     $script:Clock=[Diagnostics.Stopwatch]::StartNew()
     $script:LastTick=$script:Clock.ElapsedTicks
     $script:Timer=New-Object Windows.Forms.Timer
@@ -3911,6 +4292,7 @@ function Start-SpaceFrack {
         param($sender,$eventArgs)
         if($script:IsPainting -or $script:Closing){return}
         $script:IsPainting=$true
+        $paintStarted=[Diagnostics.Stopwatch]::GetTimestamp()
         try{Paint-Game $eventArgs.Graphics}
         catch{
             if($null -eq $script:FatalError){
@@ -3919,7 +4301,11 @@ function Start-SpaceFrack {
                 if($SmokeTest){$script:Form.Close()}
             }
         }
-        finally{$script:IsPainting=$false}
+        finally{
+            $paintElapsed=([Diagnostics.Stopwatch]::GetTimestamp()-$paintStarted)*1000.0/[Diagnostics.Stopwatch]::Frequency
+            Register-RenderPerformance $paintElapsed
+            $script:IsPainting=$false
+        }
     })
     $script:Canvas.Add_MouseMove({
         param($sender,$eventArgs)
