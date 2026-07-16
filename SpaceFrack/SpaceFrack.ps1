@@ -38,7 +38,7 @@ public sealed class SpaceFrackCanvas : Panel
 "@
 }
 
-$script:Version = "0.4.15-alpha"
+$script:Version = "0.4.16-alpha"
 $script:VirtualWidth = 1280.0
 $script:VirtualHeight = 720.0
 $script:ViewportBottom = 510.0
@@ -1132,6 +1132,8 @@ function New-GameState {
         Planets = $systems.Sol.Planets
         PlanetOrder = $systems.Sol.Order
         TraderState = @{}
+        TraderRestockPoll = 1.0
+        TraderRestockBoundary = Get-LocalQuarterHourBoundary
         QuestState = @{}
         GameStarted = (Get-Date)
         Stars = New-Starfield
@@ -1749,6 +1751,7 @@ function New-TraderStock {
 
 function Get-LocalQuarterHourBoundary {
     param([datetime] $Now=(Get-Date))
+    if($Now.Kind -eq [DateTimeKind]::Utc){$Now=$Now.ToLocalTime()}
     $minute=[int]([Math]::Floor($Now.Minute/15.0)*15)
     return $Now.Date.AddHours($Now.Hour).AddMinutes($minute)
 }
@@ -1756,6 +1759,85 @@ function Get-LocalQuarterHourBoundary {
 function Get-NextLocalQuarterHour {
     param([datetime] $Now=(Get-Date))
     return (Get-LocalQuarterHourBoundary $Now).AddMinutes(15)
+}
+
+function ConvertTo-LocalTraderTime {
+    param($Value)
+    if($null -eq $Value){return $null}
+    if($Value -is [datetimeoffset]){return ([datetimeoffset]$Value).LocalDateTime}
+    if($Value -is [datetime]){
+        $date=[datetime]$Value
+        if($date.Kind -eq [DateTimeKind]::Utc){return $date.ToLocalTime()}
+        if($date.Kind -eq [DateTimeKind]::Local){return $date}
+        return [datetime]::SpecifyKind($date,[DateTimeKind]::Local)
+    }
+    if($Value -is [System.Collections.IDictionary]){
+        if($Value.Contains("value")){return ConvertTo-LocalTraderTime $Value["value"]}
+        if($Value.Contains("DateTime")){return ConvertTo-LocalTraderTime $Value["DateTime"]}
+        return $null
+    }
+    $text=[string]$Value
+    if($text -match '^/Date\((-?\d+)(?:[+-]\d{4})?\)/$'){
+        try{return [DateTimeOffset]::FromUnixTimeMilliseconds([long]$matches[1]).LocalDateTime}catch{return $null}
+    }
+    try{
+        $parsed=[DateTimeOffset]::Parse($text,[Globalization.CultureInfo]::InvariantCulture,[Globalization.DateTimeStyles]::RoundtripKind)
+        return $parsed.LocalDateTime
+    }catch{}
+    try{
+        $date=[datetime]::Parse($text)
+        if($date.Kind -eq [DateTimeKind]::Utc){return $date.ToLocalTime()}
+        if($date.Kind -eq [DateTimeKind]::Local){return $date}
+        return [datetime]::SpecifyKind($date,[DateTimeKind]::Local)
+    }catch{return $null}
+}
+
+function Reset-TraderStateRecord {
+    param($State,$Planet,[datetime] $Boundary)
+    $State.Stock=New-TraderStock $Planet.TraderStockRules
+    $State.Credits=[int]$Planet.TraderCredits
+    $State.LastRestock=[datetime]::SpecifyKind($Boundary,[DateTimeKind]::Local)
+}
+
+function Update-TraderStateRecord {
+    param($State,$Planet,[datetime] $Boundary)
+    if(-not $State.ContainsKey("LastRestock") -and $State.ContainsKey("LastTrade")){$State.LastRestock=$State.LastTrade}
+    $last=if($State.ContainsKey("LastRestock")){ConvertTo-LocalTraderTime $State.LastRestock}else{$null}
+    if($null -eq $last -or $last -lt $Boundary -or $last -gt $Boundary){
+        Reset-TraderStateRecord $State $Planet $Boundary
+        return $true
+    }
+    $State.LastRestock=$last
+    return $false
+}
+
+function Reset-TradeSelection {
+    $script:G.TradeSell=@{};$script:G.TradeBuy=@{};$script:G.TradeScroll=0;$script:G.TraderSellScroll=0;$script:G.TraderBuyScroll=0
+    $script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false
+}
+
+function Refresh-DueTraderStates {
+    param([datetime] $Now=(Get-Date))
+    $boundary=Get-LocalQuarterHourBoundary $Now
+    $refreshed=New-ArrayList
+    foreach($systemId in @($script:G.Systems.Keys)){
+        $system=$script:G.Systems[$systemId]
+        foreach($planetName in @($system.Order)){
+            $planet=$system.Planets[$planetName]
+            if(-not $planet.Inhabited){continue}
+            $key=("{0}|{1}" -f $systemId,$planetName)
+            $legacyKey=[string]$planetName
+            if(-not $script:G.TraderState.ContainsKey($key) -and $script:G.TraderState.ContainsKey($legacyKey)){
+                $script:G.TraderState[$key]=$script:G.TraderState[$legacyKey]
+                $script:G.TraderState.Remove($legacyKey)
+            }
+            if($script:G.TraderState.ContainsKey($key) -and (Update-TraderStateRecord $script:G.TraderState[$key] $planet $boundary)){
+                [void]$refreshed.Add($key)
+            }
+        }
+    }
+    if($refreshed.Count -gt 0){Reset-TradeSelection}
+    return @($refreshed)
 }
 
 function Initialize-TraderState {
@@ -1770,23 +1852,11 @@ function Initialize-TraderState {
     }
     $boundary=Get-LocalQuarterHourBoundary $Now
     $needsRefresh=-not $script:G.TraderState.ContainsKey($key)
-    if($script:G.TraderState.ContainsKey($key)){
-        $state=$script:G.TraderState[$key]
-        if(-not $state.ContainsKey("LastRestock") -and $state.ContainsKey("LastTrade")){$state.LastRestock=$state.LastTrade}
-        try{$last=[datetime]$state.LastRestock;$needsRefresh=$last -lt $boundary}catch{$needsRefresh=$true}
-    }
     if($needsRefresh){
-        if($script:G.TraderState.ContainsKey($key)){
-            $state=$script:G.TraderState[$key]
-            $state.Stock=New-TraderStock $planet.TraderStockRules
-            $state.Credits=[int]$planet.TraderCredits
-            $state.LastRestock=$boundary
-        }else{
-            $script:G.TraderState[$key]=@{Stock=(New-TraderStock $planet.TraderStockRules);Credits=[int]$planet.TraderCredits;LastRestock=$boundary}
-        }
-        $script:G.TradeSell=@{};$script:G.TradeBuy=@{};$script:G.TradeScroll=0;$script:G.TraderSellScroll=0;$script:G.TraderBuyScroll=0
-        $script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false
-    }
+        $script:G.TraderState[$key]=@{Stock=@{};Credits=0;LastRestock=$boundary}
+        Reset-TraderStateRecord $script:G.TraderState[$key] $planet $boundary
+    }else{$needsRefresh=Update-TraderStateRecord $script:G.TraderState[$key] $planet $boundary}
+    if($needsRefresh){Reset-TradeSelection}
     return $script:G.TraderState[$key]
 }
 
@@ -1803,7 +1873,7 @@ function Get-TraderStockRows {
 }
 
 function Clear-TradeLedger {
-    $script:G.TradeSell=@{};$script:G.TradeBuy=@{};$script:G.TradeScroll=0;$script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false
+    Reset-TradeSelection
 }
 
 function Get-TradePendingQuantity {
@@ -2144,11 +2214,26 @@ function Show-TextInputDialog {
     try{if($dialog.ShowDialog($script:Form) -eq [Windows.Forms.DialogResult]::OK){return $box.Text.Trim()};return ""}finally{$dialog.Dispose()}
 }
 
+function Get-TraderStateSaveCopy {
+    $copy=@{}
+    foreach($key in @($script:G.TraderState.Keys)){
+        $source=$script:G.TraderState[$key]
+        $state=@{}
+        foreach($field in @($source.Keys)){$state[$field]=$source[$field]}
+        $last=if($state.ContainsKey("LastRestock")){ConvertTo-LocalTraderTime $state.LastRestock}elseif($state.ContainsKey("LastTrade")){ConvertTo-LocalTraderTime $state.LastTrade}else{$null}
+        if($null -eq $last){$last=Get-LocalQuarterHourBoundary}
+        $state.LastRestock=$last.ToString("o")
+        if($state.ContainsKey("LastTrade")){$state.Remove("LastTrade")}
+        $copy[$key]=$state
+    }
+    return $copy
+}
+
 function Save-Game {
     if([string]::IsNullOrWhiteSpace($script:G.Player.SaveName)){$name=Show-TextInputDialog "SPACEFRACK SAVE" "Pilot name:" $script:G.Player.PilotName;if([string]::IsNullOrWhiteSpace($name)){return};$script:G.Player.SaveName=$name;$script:G.Player.PilotName=$name}
     $safe=($script:G.Player.SaveName -replace '[^A-Za-z0-9 _-]','').Trim();if([string]::IsNullOrWhiteSpace($safe)){$safe="Pilot"}
     $path=Join-Path (Get-SaveDirectory) ("spacefrack_{0}_{1}.json" -f $safe,(Get-Date -Format "ddMMyy-HHmmss"))
-    $data=@{Version=$script:Version;SavedAt=(Get-Date).ToString("o");GameStarted=([datetime]$script:G.GameStarted).ToString("o");SystemId=$script:G.Player.SystemId;Player=$script:G.Player;Inventory=$script:G.Inventory;TraderState=$script:G.TraderState;QuestState=$script:G.QuestState}
+    $data=@{Version=$script:Version;SavedAt=(Get-Date).ToString("o");GameStarted=([datetime]$script:G.GameStarted).ToString("o");SystemId=$script:G.Player.SystemId;Player=$script:G.Player;Inventory=$script:G.Inventory;TraderState=(Get-TraderStateSaveCopy);QuestState=$script:G.QuestState}
     $data|ConvertTo-Json -Depth 12|Set-Content -LiteralPath $path -Encoding UTF8
     Add-Notice ("Saved flight: {0}" -f [IO.Path]::GetFileName($path))
 }
@@ -2174,6 +2259,10 @@ function Load-Game {
         if(-not $entry.ContainsKey("Planet")){$entry.Planet=$row.Planet}
     }
     if($data.ContainsKey("GameStarted")){try{$script:G.GameStarted=[datetime]$data.GameStarted}catch{}}
+    $now=Get-Date
+    [void](Refresh-DueTraderStates $now)
+    $script:G.TraderRestockBoundary=Get-LocalQuarterHourBoundary $now
+    $script:G.TraderRestockPoll=1.0
     $script:G.Mode="Orbit";$script:G.WorldMode="Orbit"
     Add-Notice ("Loaded flight: {0}" -f [IO.Path]::GetFileName($Path))
 }
@@ -2258,6 +2347,22 @@ function Update-Game {
     $script:G.ImpactFlash = [Math]::Max(0.0, $script:G.ImpactFlash - (4.8 * $Delta))
     $script:G.GreenFlash = [Math]::Max(0.0, $script:G.GreenFlash - (1.5 * $Delta))
     $script:G.CyanFlash = [Math]::Max(0.0, $script:G.CyanFlash - (1.5 * $Delta))
+    $script:G.TraderRestockPoll=[Math]::Max(0.0,[double]$script:G.TraderRestockPoll-$Delta)
+    if($script:G.TraderRestockPoll -le 0.0){
+        $script:G.TraderRestockPoll=1.0
+        $now=Get-Date
+        $boundary=Get-LocalQuarterHourBoundary $now
+        $knownBoundary=ConvertTo-LocalTraderTime $script:G.TraderRestockBoundary
+        if($null -eq $knownBoundary -or $knownBoundary -ne $boundary){
+            $currentTraderKey=Get-TraderKey
+            $refreshed=@(Refresh-DueTraderStates $now)
+            $script:G.TraderRestockBoundary=$boundary
+            if($script:G.Mode -eq "Trader" -and $refreshed -contains $currentTraderKey){
+                if($script:G.TraderTab -eq "Trade"){[void](Set-TraderDialog "TradeGreeting" -First)}
+                Add-Notice "Trader inventory and budget restocked."
+            }
+        }
+    }
     $cameraAmount = 1.0 - [Math]::Exp(-5.5 * $Delta)
     $navigationRate=2.4
     if($script:G.TargetSystemBlend -ge 0.99){
@@ -4411,6 +4516,31 @@ function Start-SpaceFrack {
                 Assert-GameState ($quarterTrader.Credits -eq 17 -and $quarterTrader.Stock.ContainsKey("Sentinel")) "trader stock remains stable within a quarter hour"
                 $quarterTrader=Initialize-TraderState ([datetime]::new(2026,7,13,10,15,0))
                 Assert-GameState ($quarterTrader.Credits -eq 3000 -and -not $quarterTrader.Stock.ContainsKey("Sentinel") -and [datetime]$quarterTrader.LastRestock -eq [datetime]::new(2026,7,13,10,15,0)) "trader stock and budget reset on the local quarter hour"
+                $quarterTrader.Credits=11;$quarterTrader.Stock=@{Sentinel=2}
+                $quarterTrader=Initialize-TraderState ([datetime]::new(2026,7,13,10,30,0))
+                Assert-GameState ($quarterTrader.Credits -eq 3000 -and -not $quarterTrader.Stock.ContainsKey("Sentinel") -and [datetime]$quarterTrader.LastRestock -eq [datetime]::new(2026,7,13,10,30,0)) "trader restock repeats across consecutive quarter hours"
+                $quarterTrader.Credits=9;$quarterTrader.Stock=@{Sentinel=3};$quarterTrader.LastRestock=[datetime]::new(2026,7,13,14,45,0)
+                $quarterTrader=Initialize-TraderState ([datetime]::new(2026,7,13,10,45,0))
+                Assert-GameState ($quarterTrader.Credits -eq 3000 -and -not $quarterTrader.Stock.ContainsKey("Sentinel") -and [datetime]$quarterTrader.LastRestock -eq [datetime]::new(2026,7,13,10,45,0)) "invalid future trader timestamp self-heals"
+                $localWall=[datetime]::new(2026,7,13,21,15,0,[DateTimeKind]::Unspecified)
+                $localOffset=[TimeZoneInfo]::Local.GetUtcOffset($localWall)
+                $legacyOffset=[DateTimeOffset]::new($localWall,$localOffset)
+                $legacyJsonStamp=("/Date({0})/" -f $legacyOffset.ToUnixTimeMilliseconds())
+                $legacyExpected=$legacyOffset.LocalDateTime
+                $nestedLegacyStamp=@{DisplayHint=2;DateTime="Monday, July 13, 2026 9:15:00 PM";value=$legacyJsonStamp}
+                Assert-GameState ((ConvertTo-LocalTraderTime $legacyJsonStamp) -eq $legacyExpected -and (ConvertTo-LocalTraderTime $nestedLegacyStamp) -eq $legacyExpected) "Windows PowerShell and nested legacy trader timestamps normalize to local time"
+                $quarterTrader.LastRestock=$legacyExpected
+                $saveTraderCopy=Get-TraderStateSaveCopy
+                $savedStamp=[string]$saveTraderCopy["Sol|Mars"].LastRestock
+                Assert-GameState ($saveTraderCopy["Sol|Mars"].LastRestock -is [string] -and (ConvertTo-LocalTraderTime $savedStamp) -eq $legacyExpected) "trader timestamps save as unambiguous ISO text"
+                $script:G.TraderState["Sol|Earth"]=@{Stock=@{Sentinel=4};Credits=4;LastRestock=[datetime]::new(2026,7,13,10,45,0)}
+                $refreshedKeys=@(Refresh-DueTraderStates ([datetime]::new(2026,7,13,11,0,0)))
+                Assert-GameState ($refreshedKeys -contains "Sol|Earth" -and $script:G.TraderState["Sol|Earth"].Credits -eq 5000 -and -not $script:G.TraderState["Sol|Earth"].Stock.ContainsKey("Sentinel")) "offscreen trader states refresh at a clock boundary"
+                $runtimeBoundary=Get-LocalQuarterHourBoundary
+                $script:G.TraderState["Sol|Mars"]=@{Stock=@{Sentinel=5};Credits=5;LastRestock=$runtimeBoundary.AddMinutes(-15)}
+                $script:G.TraderRestockBoundary=$runtimeBoundary.AddMinutes(-15);$script:G.TraderRestockPoll=0.0
+                Update-Game 0.001
+                Assert-GameState ($script:G.TraderState["Sol|Mars"].Credits -eq 3000 -and -not $script:G.TraderState["Sol|Mars"].Stock.ContainsKey("Sentinel") -and [datetime]$script:G.TraderState["Sol|Mars"].LastRestock -eq $runtimeBoundary) "running clock poll applies due trader restocks"
                 $script:G.TraderState=@{Mars=@{Stock=@{Legacy=1};Credits=123;LastTrade=[datetime]::new(2026,7,13,10,0,0)}}
                 $legacyTrader=Initialize-TraderState $quarterTest
                 Assert-GameState ($script:G.TraderState.ContainsKey("Sol|Mars") -and -not $script:G.TraderState.ContainsKey("Mars") -and $legacyTrader.Credits -eq 123 -and [datetime]$legacyTrader.LastRestock -eq [datetime]::new(2026,7,13,10,0,0)) "legacy Spacegame trader state migration"
