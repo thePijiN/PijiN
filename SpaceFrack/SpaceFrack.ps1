@@ -38,12 +38,13 @@ public sealed class SpaceFrackCanvas : Panel
 "@
 }
 
-$script:Version = "0.4.16-alpha"
+$script:Version = "0.4.18-alpha"
 $script:VirtualWidth = 1280.0
 $script:VirtualHeight = 720.0
 $script:ViewportBottom = 510.0
 $script:FrackPlanetRadius = 2850.0
 $script:FrackPlanetCenterY = 2925.0
+$script:XRFHoldSeconds = 0.85
 $script:Form = $null
 $script:Canvas = $null
 $script:Timer = $null
@@ -226,14 +227,15 @@ function Add-HitTarget {
         [string] $Action,
         [Drawing.RectangleF] $Rectangle,
         $Data = $null,
-        [bool] $Enabled = $true
+        [bool] $Enabled = $true,
+        [double] $HoldSeconds = 0.0
     )
     $index=$script:HitTargets.Count
     if($index -ge $script:HitTargetPool.Count){
-        [void]$script:HitTargetPool.Add([pscustomobject]@{Action="";Rectangle=[Drawing.RectangleF]::Empty;Data=$null;Enabled=$false})
+        [void]$script:HitTargetPool.Add([pscustomobject]@{Action="";Rectangle=[Drawing.RectangleF]::Empty;Data=$null;Enabled=$false;HoldSeconds=0.0})
     }
     $target=$script:HitTargetPool[$index]
-    $target.Action=$Action;$target.Rectangle=$Rectangle;$target.Data=$Data;$target.Enabled=$Enabled
+    $target.Action=$Action;$target.Rectangle=$Rectangle;$target.Data=$Data;$target.Enabled=$Enabled;$target.HoldSeconds=[Math]::Max(0.0,$HoldSeconds)
     [void]$script:HitTargets.Add($target)
 }
 
@@ -314,17 +316,28 @@ function Draw-Button {
         [string] $Action,
         $Data = $null,
         [bool] $Enabled = $true,
-        [Drawing.Color] $Accent = ([Drawing.Color]::FromArgb(74, 190, 202))
+        [Drawing.Color] $Accent = ([Drawing.Color]::FromArgb(74, 190, 202)),
+        [double] $HoldSeconds = 0.0
     )
     $hover = $Enabled -and (Test-Hover $Rectangle)
     $back = if (-not $Enabled) { [Drawing.Color]::FromArgb(125, 18, 23, 26) } elseif ($hover) { [Drawing.Color]::FromArgb(235, 34, 72, 76) } else { [Drawing.Color]::FromArgb(220, 21, 39, 43) }
     $line = if ($hover) { $Accent } elseif ($Enabled) { [Drawing.Color]::FromArgb(125, $Accent.R, $Accent.G, $Accent.B) } else { [Drawing.Color]::FromArgb(45, 68, 71, 74) }
     Fill-RectangleColor $Graphics $back $Rectangle
+    if($Enabled -and $HoldSeconds -gt 0.0 -and $null -ne $script:G.HoldButton){
+        $hold=$script:G.HoldButton
+        if($hold.Action -eq $Action -and [string]$hold.Data -eq [string]$Data){
+            $progress=Get-ClampedValue ([double]$hold.Elapsed/[Math]::Max(0.001,[double]$hold.Duration)) 0.0 1.0
+            if($progress -gt 0.0){
+                $fill=[Drawing.RectangleF]::new($Rectangle.X,$Rectangle.Y,$Rectangle.Width*$progress,$Rectangle.Height)
+                Fill-RectangleColor $Graphics ([Drawing.Color]::FromArgb(92,$Accent.R,$Accent.G,$Accent.B)) $fill
+            }
+        }
+    }
     $pen=$script:Assets.FramePen
     $pen.Color=$line;$pen.Width=$(if($hover){2.0}else{1.0});$pen.DashStyle=[Drawing.Drawing2D.DashStyle]::Solid;$pen.StartCap=[Drawing.Drawing2D.LineCap]::Flat;$pen.EndCap=[Drawing.Drawing2D.LineCap]::Flat
     $Graphics.DrawRectangle($pen,$Rectangle.X,$Rectangle.Y,$Rectangle.Width,$Rectangle.Height)
     Draw-Text $Graphics $Text $script:Assets.FontSmallBold $(if ($Enabled) { (Get-Color White) } else { (Get-Color DarkGray) }) $Rectangle $script:Assets.Center
-    Add-HitTarget $Action $Rectangle $Data $Enabled
+    Add-HitTarget $Action $Rectangle $Data $Enabled $HoldSeconds
 }
 
 function Draw-FrackPlanetButton {
@@ -1179,6 +1192,7 @@ function New-GameState {
         TradeBuy = @{}
         QuantityPicker = $null
         QuantityDragging = $false
+        HoldButton = $null
         SelectedQuest = ""
         ContractContext = "Log"
         ContractTab = "Active"
@@ -1996,7 +2010,7 @@ function Open-JettisonQuantityPicker {
     $script:G.QuantityDragging=$false
 }
 
-function Set-TradePickerFromX {
+function Set-QuantityPickerFromX {
     param([double] $X)
     $picker=$script:G.QuantityPicker;if($null -eq $picker -or $picker.SliderRect.Width -le 0){return}
     $ratio=Get-ClampedValue (($X-$picker.SliderRect.X)/$picker.SliderRect.Width) 0 1
@@ -2004,7 +2018,7 @@ function Set-TradePickerFromX {
     $picker.Input="";$picker.TypingStarted=$false
 }
 
-function Apply-TradeQuantityPicker {
+function Apply-QuantityPicker {
     $picker=$script:G.QuantityPicker;if($null -eq $picker){return}
     $quantity=[int](Get-ClampedValue ([double]$picker.Value) 1 $picker.Maximum)
     if($picker.Purpose -eq "Jettison"){Jettison-CargoQuantity $picker.Name $quantity}
@@ -2335,6 +2349,43 @@ function Get-AlphaColor {
     return [Drawing.Color]::FromArgb((Get-ClampedValue $Alpha 0 255), $Color.R, $Color.G, $Color.B)
 }
 
+function Cancel-HoldButton {
+    if($null -ne $script:G){$script:G.HoldButton=$null}
+    if($null -ne $script:Canvas -and -not $script:Canvas.IsDisposed -and $script:Canvas.Capture){$script:Canvas.Capture=$false}
+}
+
+function Start-HoldButton {
+    param($Target)
+    if($null -eq $Target -or -not $Target.Enabled -or [double]$Target.HoldSeconds -le 0.0){return $false}
+    if($script:G.InputLocked -gt 0.0 -or $script:G.CryoActive){return $false}
+    $script:G.HoldButton=@{
+        Action=[string]$Target.Action
+        Data=$Target.Data
+        Duration=[double]$Target.HoldSeconds
+        Elapsed=0.0
+        Rectangle=[Drawing.RectangleF]$Target.Rectangle
+        Mode=[string]$script:G.Mode
+    }
+    return $true
+}
+
+function Update-HoldButton {
+    param([double] $Delta)
+    if($null -eq $script:G.HoldButton){return}
+    $hold=$script:G.HoldButton
+    $point=[Drawing.PointF]::new([single]$script:MouseX,[single]$script:MouseY)
+    if($script:G.Mode -ne $hold.Mode -or $script:G.InputLocked -gt 0.0 -or $script:G.CryoActive -or -not $hold.Rectangle.Contains($point)){
+        Cancel-HoldButton
+        return
+    }
+    $hold.Elapsed=[Math]::Min([double]$hold.Duration,[double]$hold.Elapsed+[Math]::Max(0.0,$Delta))
+    if($hold.Elapsed -ge $hold.Duration){
+        $action=[string]$hold.Action;$data=$hold.Data
+        Cancel-HoldButton
+        Invoke-Action $action $data
+    }
+}
+
 function Update-Game {
     param([double] $Delta)
     if ($null -eq $script:G) { return }
@@ -2347,6 +2398,7 @@ function Update-Game {
     $script:G.ImpactFlash = [Math]::Max(0.0, $script:G.ImpactFlash - (4.8 * $Delta))
     $script:G.GreenFlash = [Math]::Max(0.0, $script:G.GreenFlash - (1.5 * $Delta))
     $script:G.CyanFlash = [Math]::Max(0.0, $script:G.CyanFlash - (1.5 * $Delta))
+    Update-HoldButton $Delta
     $script:G.TraderRestockPoll=[Math]::Max(0.0,[double]$script:G.TraderRestockPoll-$Delta)
     if($script:G.TraderRestockPoll -le 0.0){
         $script:G.TraderRestockPoll=1.0
@@ -3598,7 +3650,7 @@ function Draw-MfdOrbit {
     $canFrack=([double]$script:G.Player.Fuel -ge 0.5) -and ((Get-CurrentWeight) -lt [double]$script:G.Player.MaxWeight) -and ([double]$script:G.Player.HP -gt 0)
     Draw-FrackPlanetButton $Graphics ([Drawing.RectangleF]::new(844,575,145,42)) $planet $canFrack
     if($planet.Inhabited){Draw-Button $Graphics ([Drawing.RectangleF]::new(844,628,145,42)) "TRADER" "Trader" $null $true (Get-Color Green)}
-    if([int]$script:G.Player.XRFScanner -gt 0){Draw-Button $Graphics ([Drawing.RectangleF]::new(687,575,145,42)) "XRF8 SCAN" "XRF" $null ($script:G.Player.Fuel -ge 75) (Get-Color Magenta)}
+    if([int]$script:G.Player.XRFScanner -gt 0){Draw-Button $Graphics ([Drawing.RectangleF]::new(687,575,145,42)) "HOLD XRF8 SCAN" "XRF" $null ($script:G.Player.Fuel -ge 75) (Get-Color Magenta) -HoldSeconds $script:XRFHoldSeconds}
 }
 
 function Get-SystemDetailPlanet {
@@ -3786,11 +3838,10 @@ function Draw-MfdTrader {
         Draw-Button $Graphics ([Drawing.RectangleF]::new($buyX+150,$top+218,34,21)) ">" "TradePaneScroll" "Buy|1" ($script:G.TraderBuyScroll -lt $buyMax) (Get-Color Green)
         Draw-Button $Graphics ([Drawing.RectangleF]::new($buyX,$top+246,$buyW,31)) "BACK TO COMMS" "TraderTab" "Comms" $true (Get-Color Cyan)
 
-        if($null -ne $script:G.QuantityPicker){Draw-TradeQuantityPicker $Graphics}
     }
 }
 
-function Draw-TradeQuantityPicker {
+function Draw-QuantityPicker {
     param([Drawing.Graphics] $Graphics)
     $picker=$script:G.QuantityPicker;if($null -eq $picker){return};$top=$script:G.MfdTop;$rect=[Drawing.RectangleF]::new(405,$top+57,420,174)
     Fill-RectangleColor $Graphics ([Drawing.Color]::FromArgb(252,10,16,19)) $rect;$pen=New-Object Drawing.Pen((Get-Color Cyan),2);try{$Graphics.DrawRectangle($pen,$rect.X,$rect.Y,$rect.Width,$rect.Height)}finally{$pen.Dispose()}
@@ -4020,6 +4071,7 @@ function Draw-Mfd {
         "Death" {Draw-MfdFrack $Graphics}
         default {Draw-MfdOrbit $Graphics}
     }
+    if($null -ne $script:G.QuantityPicker){Draw-QuantityPicker $Graphics}
 }
 
 function Draw-MainMenu {
@@ -4206,7 +4258,7 @@ function Invoke-Action {
         "ClearTrade" {Clear-TradeLedger}
         "QuickStageSell" {Stage-QuickSell}
         "TradePaneScroll" {$parts=([string]$Data)-split '\|',2;$amount=[int]$parts[1];if($parts[0] -eq "Sell"){$script:G.TraderSellScroll+=$amount}elseif($parts[0] -eq "Buy"){$script:G.TraderBuyScroll+=$amount}else{$script:G.TradeScroll+=$amount}}
-        "PickerConfirm" {Apply-TradeQuantityPicker}
+        "PickerConfirm" {Apply-QuantityPicker}
         "PickerCancel" {$script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false}
         "Contracts" {Open-Contracts}
         "ContractLog" {Open-Contracts "Log"}
@@ -4246,6 +4298,7 @@ function Invoke-LogicalClick {
         $target=$script:HitTargets[$i]
         if($target.Enabled -and $target.Rectangle.Contains([Drawing.PointF]::new([single]$X,[single]$Y))){
             if($pickerOpen -and $target.Action -notin @("PickerConfirm","PickerCancel")){$script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false;return}
+            if([double]$target.HoldSeconds -gt 0.0){return}
             Invoke-Action $target.Action $target.Data
             return
         }
@@ -4288,7 +4341,7 @@ function Invoke-KeyDown {
             $parsed=0;if([int]::TryParse($picker.Input,[ref]$parsed)){$picker.Value=[int](Get-ClampedValue $parsed 1 $picker.Maximum)}
         }elseif($Event.KeyCode -eq [Windows.Forms.Keys]::Back){
             if(-not $picker.TypingStarted){$picker.Input="";$picker.TypingStarted=$true}elseif($picker.Input.Length -gt 0){$picker.Input=$picker.Input.Substring(0,$picker.Input.Length-1)};$parsed=0;if([int]::TryParse($picker.Input,[ref]$parsed)){$picker.Value=[int](Get-ClampedValue $parsed 1 $picker.Maximum)}
-        }elseif($Event.KeyCode -eq [Windows.Forms.Keys]::Enter){Apply-TradeQuantityPicker}
+        }elseif($Event.KeyCode -eq [Windows.Forms.Keys]::Enter){Apply-QuantityPicker}
         elseif($Event.KeyCode -eq [Windows.Forms.Keys]::Escape){$script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false}
         $Event.Handled=$true;$Event.SuppressKeyPress=$true;return
     }
@@ -4417,17 +4470,24 @@ function Start-SpaceFrack {
         $point=Convert-MousePoint $eventArgs.X $eventArgs.Y
         $script:MouseX=$point.X;$script:MouseY=$point.Y
         if($script:G.VibrationDragging){Set-VibrationIntensityFromX $point.X}
-        elseif($script:G.QuantityDragging -and $null -ne $script:G.QuantityPicker){Set-TradePickerFromX $point.X}
+        elseif($script:G.QuantityDragging -and $null -ne $script:G.QuantityPicker){Set-QuantityPickerFromX $point.X}
     })
     $script:Canvas.Add_MouseDown({
         param($sender,$eventArgs)
         if($eventArgs.Button -eq [Windows.Forms.MouseButtons]::Left){
             $point=Convert-MousePoint $eventArgs.X $eventArgs.Y
+            $script:MouseX=$point.X;$script:MouseY=$point.Y
             if($script:G.Mode -eq "Settings" -and $script:G.VibrationSliderRect.Contains($point)){
                 Set-VibrationIntensityFromX $point.X;$script:G.VibrationDragging=$true;$script:Canvas.Capture=$true;$script:Canvas.Focus();return
             }
             if($null -ne $script:G.QuantityPicker -and $script:G.QuantityPicker.SliderRect.Contains($point)){
-                Set-TradePickerFromX $point.X;$script:G.QuantityDragging=$true;$script:Canvas.Capture=$true;$script:Canvas.Focus();return
+                Set-QuantityPickerFromX $point.X;$script:G.QuantityDragging=$true;$script:Canvas.Capture=$true;$script:Canvas.Focus();return
+            }
+            $target=Get-HitTargetAtPoint $point.X $point.Y
+            if($null -ne $target -and [double]$target.HoldSeconds -gt 0.0){
+                if($null -ne $script:G.QuantityPicker){$script:G.QuantityPicker=$null;$script:G.QuantityDragging=$false;$script:Canvas.Focus();return}
+                if(Start-HoldButton $target){$script:Canvas.Capture=$true}
+                $script:Canvas.Focus();return
             }
             Invoke-LogicalClick $point.X $point.Y
             $script:Canvas.Focus()
@@ -4440,7 +4500,7 @@ function Start-SpaceFrack {
     })
     $script:Canvas.Add_MouseUp({
         param($sender,$eventArgs)
-        if($eventArgs.Button -eq [Windows.Forms.MouseButtons]::Left){$script:G.QuantityDragging=$false;$script:G.VibrationDragging=$false;$script:Canvas.Capture=$false}
+        if($eventArgs.Button -eq [Windows.Forms.MouseButtons]::Left){$script:G.QuantityDragging=$false;$script:G.VibrationDragging=$false;Cancel-HoldButton;$script:Canvas.Capture=$false}
     })
     $script:Canvas.Add_MouseWheel({
         param($sender,$eventArgs)
@@ -4471,6 +4531,7 @@ function Start-SpaceFrack {
         }
     })
     $script:Form.Add_KeyDown({param($sender,$eventArgs)Invoke-KeyDown $eventArgs})
+    $script:Form.Add_Deactivate({Cancel-HoldButton})
     $script:Form.Add_FormClosing({$script:Closing=$true;$script:Timer.Stop()})
     $script:Form.Add_FormClosed({$script:Clock.Stop();$script:Timer.Dispose();Remove-Assets})
     $script:Form.Add_Shown({
@@ -4487,6 +4548,20 @@ function Start-SpaceFrack {
                 $script:G.VibrationSliderRect=[Drawing.RectangleF]::new(0,0,100,20);Set-VibrationIntensityFromX 72
                 Assert-GameState ($script:G.DrillVibration -and [int]$script:G.DrillVibrationIntensity -eq 72) "vibration intensity slider maps pointer position"
                 $script:G.DrillVibration=$true;$script:G.DrillVibrationIntensity=1
+                $holdTestTarget=[pscustomobject]@{Action="None";Data=$null;Enabled=$true;HoldSeconds=$script:XRFHoldSeconds;Rectangle=[Drawing.RectangleF]::new(0,0,100,30)}
+                $script:MouseX=20;$script:MouseY=15;[void](Start-HoldButton $holdTestTarget);Update-HoldButton 0.25
+                Assert-GameState ($null -ne $script:G.HoldButton -and [Math]::Abs([double]$script:G.HoldButton.Elapsed-0.25) -lt 0.001) "hold button accumulates progress while pressed inside"
+                $holdBitmap=[Drawing.Bitmap]::new(120,40);$holdGraphics=[Drawing.Graphics]::FromImage($holdBitmap)
+                try{
+                    $holdGraphics.Clear([Drawing.Color]::Black);$script:HitTargets.Clear()
+                    Draw-Button $holdGraphics $holdTestTarget.Rectangle "" "None" $null $true (Get-Color Magenta) -HoldSeconds $script:XRFHoldSeconds
+                    $registeredHold=$script:HitTargets[$script:HitTargets.Count-1]
+                    Assert-GameState ($holdBitmap.GetPixel(10,15).ToArgb() -ne $holdBitmap.GetPixel(90,15).ToArgb() -and [Math]::Abs([double]$registeredHold.HoldSeconds-$script:XRFHoldSeconds) -lt 0.001) "hold button renders progress fill and registers duration"
+                }finally{$holdGraphics.Dispose();$holdBitmap.Dispose()}
+                Cancel-HoldButton
+                Assert-GameState ($null -eq $script:G.HoldButton) "hold button release cancels pending action"
+                $script:MouseX=20;$script:MouseY=15;[void](Start-HoldButton $holdTestTarget);$script:MouseX=120;Update-HoldButton 0.05
+                Assert-GameState ($null -eq $script:G.HoldButton) "hold button pointer exit cancels pending action"
                 $samplesExpected=@{Silicates=60;Carbon=40;Oxygen=40;Water=40;Iron=50;Hydrogen=35;Nitrogen=30;Magnesium=20;Calcium=20;Aluminum=20;Sulfur=20;ScrapMetal=20;Zinc=15;Tin=15;Copper=15;Silicon=10;Nickel=10;Biomass=5;Boron=10;Argon=10;Neon=10;Helium=8;Silver=8;Tungsten=5;Platinum=3;Gold=3;MetallicHydrogen=5;Fossils=2;Plutonium=2;Uranium=5;Radium=4;Neptunium=2;Promethium=1;Iridium=1}
                 $samplesQuest=(Get-QuestRow "pluto_8").Quest;$samplesMatch=$samplesQuest.Requirements.Count -eq $samplesExpected.Count
                 foreach($name in $samplesExpected.Keys){if(-not $samplesQuest.Requirements.ContainsKey($name) -or [int]$samplesQuest.Requirements[$name] -ne [int]$samplesExpected[$name]){$samplesMatch=$false;break}}
@@ -4610,7 +4685,7 @@ function Start-SpaceFrack {
                 Assert-GameState ((Get-SortedCargo)[0].Item.Rarity -eq "Upgrade") "cargo lists upgrades before consumables and resources"
                 $script:G.Inventory.Remove("Premium Cargo Baffles")
                 Add-InventoryItem "Water" 10;$beforeCredits=$script:G.Player.Credits;$beforeFuelCells=[int]$script:G.Inventory["Fuel Cell (Small)"]
-                Open-TradeQuantityPicker "Sell" "Water" "Add" 10;$script:G.QuantityPicker.SliderRect=[Drawing.RectangleF]::new(0,0,100,10);Set-TradePickerFromX 100
+                Open-TradeQuantityPicker "Sell" "Water" "Add" 10;$script:G.QuantityPicker.SliderRect=[Drawing.RectangleF]::new(0,0,100,10);Set-QuantityPickerFromX 100
                 Assert-GameState ($script:G.QuantityPicker.Value -eq 10) "quantity slider reaches full available stack"
                 Invoke-KeyDown ([Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::D2))
                 Assert-GameState ($script:G.QuantityPicker.Value -eq 2) "typed quantity replaces prior slider value"
@@ -4629,8 +4704,26 @@ function Start-SpaceFrack {
                 $savedTraderCredits=[int]$trader.Credits;$trader.Credits=0;[void](Add-TradeItem "Sell" "Water" 1);Commit-Trade
                 Assert-GameState ($script:G.TraderDialogKey -eq "InsufficientFundsTrader" -and $script:G.TraderDialog -in @((Get-Planet).Dialog.InsufficientFundsTrader)) "unaffordable cargo sale uses trader InsufficientFunds dialog"
                 Clear-TradeLedger;$trader.Credits=$savedTraderCredits
-                Add-InventoryItem "Iron" 4;Open-JettisonQuantityPicker "Iron" 4;Invoke-KeyDown ([Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::D3));Invoke-KeyDown ([Windows.Forms.KeyEventArgs]::new([Windows.Forms.Keys]::Enter))
-                Assert-GameState ($script:G.Inventory["Iron"] -eq 1) "quantity picker jettisons selected stack amount"
+                Add-InventoryItem "Iron" 4
+                $savedJettisonMode=$script:G.Mode;$savedJettisonSelection=$script:G.SelectedCargo;$savedJettisonTop=if($script:G.ContainsKey("MfdTop")){$script:G.MfdTop}else{539.0};$savedJettisonExpand=$script:G.PanelExpand
+                $script:G.Mode="Cargo";$script:G.SelectedCargo="Iron";$script:G.MfdTop=407.0;$script:G.PanelExpand=1.0
+                $jettisonBitmap=[Drawing.Bitmap]::new(1280,720);$jettisonGraphics=[Drawing.Graphics]::FromImage($jettisonBitmap)
+                try{
+                    $script:HitTargets.Clear();Draw-Mfd $jettisonGraphics
+                    $jettisonTarget=@($script:HitTargets|Where-Object{$_.Action -eq "Jettison"})[0]
+                    Assert-GameState ($null -ne $jettisonTarget -and $jettisonTarget.Enabled) "cargo resource exposes enabled jettison button"
+                    Invoke-LogicalClick ($jettisonTarget.Rectangle.X+($jettisonTarget.Rectangle.Width/2.0)) ($jettisonTarget.Rectangle.Y+($jettisonTarget.Rectangle.Height/2.0))
+                    Assert-GameState ($null -ne $script:G.QuantityPicker -and $script:G.QuantityPicker.Purpose -eq "Jettison" -and $script:G.QuantityPicker.Maximum -eq 4) "cargo jettison button opens stack quantity picker"
+                    $script:HitTargets.Clear();Draw-Mfd $jettisonGraphics
+                    $confirmJettison=@($script:HitTargets|Where-Object{$_.Action -eq "PickerConfirm"})[0]
+                    Assert-GameState ($script:G.QuantityPicker.SliderRect.Width -gt 0 -and $null -ne $confirmJettison) "cargo renders jettison slider and confirmation controls"
+                    $script:G.QuantityPicker.Value=3
+                    Invoke-LogicalClick ($confirmJettison.Rectangle.X+($confirmJettison.Rectangle.Width/2.0)) ($confirmJettison.Rectangle.Y+($confirmJettison.Rectangle.Height/2.0))
+                    Assert-GameState ($script:G.Inventory["Iron"] -eq 1 -and $null -eq $script:G.QuantityPicker) "jettison confirmation deletes selected stack amount"
+                    Add-InventoryItem "Iron" 3;Jettison-CargoItem "Iron";$script:G.QuantityPicker.Value=4;Invoke-Action "PickerCancel" $null
+                    Assert-GameState ($script:G.Inventory["Iron"] -eq 4 -and $null -eq $script:G.QuantityPicker) "jettison cancellation preserves cargo"
+                    Jettison-CargoQuantity "Iron" 3
+                }finally{$jettisonGraphics.Dispose();$jettisonBitmap.Dispose();$script:G.Mode=$savedJettisonMode;$script:G.SelectedCargo=$savedJettisonSelection;$script:G.MfdTop=$savedJettisonTop;$script:G.PanelExpand=$savedJettisonExpand;$script:G.QuantityPicker=$null}
                 Assert-GameState ((Get-RarityColor "Rare").ToArgb() -eq (Get-Color Cyan).ToArgb()) "rarity colors match the original game palette"
                 $savedTraderBudget=$trader.Credits;$savedWater=[int]$script:G.Inventory["Water"];$savedIron=[int]$script:G.Inventory["Iron"];Clear-TradeLedger;$trader.Credits=30;$script:G.Inventory["Water"]=100;$script:G.Inventory.Remove("Iron");Stage-QuickSell
                 Assert-GameState ($script:G.TradeSell.Count -eq 1 -and $script:G.TradeSell["Water"] -eq 10 -and (Get-TradeTotals).SellTotal -eq 30) "quick sell never exceeds current trader budget"
@@ -4659,8 +4752,11 @@ function Start-SpaceFrack {
                 Close-Contracts
 
                 $script:G.Player.Fuel=1200.0;$script:G.Player.MaxFuel=1200.0
-                Start-XRFScan
-                Assert-GameState ($script:G.XRFResults.Count -gt 5) "XRF composition survey"
+                $xrfHoldTarget=[pscustomobject]@{Action="XRF";Data=$null;Enabled=$true;HoldSeconds=$script:XRFHoldSeconds;Rectangle=[Drawing.RectangleF]::new(0,0,100,30)}
+                $script:MouseX=20;$script:MouseY=15;[void](Start-HoldButton $xrfHoldTarget);Update-HoldButton ($script:XRFHoldSeconds-0.01)
+                Assert-GameState ($script:G.Mode -ne "XRF" -and [Math]::Abs($script:G.Player.Fuel-1200.0) -lt 0.01) "partial XRF hold does not spend fuel"
+                Update-HoldButton 0.02
+                Assert-GameState ($script:G.Mode -eq "XRF" -and $script:G.XRFResults.Count -gt 5 -and [Math]::Abs($script:G.Player.Fuel-1125.0) -lt 0.01) "completed XRF hold invokes survey once"
                 Start-Hyperjump "Typhon"
                 Assert-GameState ($script:G.Player.SystemId -eq "Typhon" -and $script:G.Player.Location -eq "Flotsam") "interstellar hyperjump"
 
@@ -4736,7 +4832,13 @@ function Start-SpaceFrack {
             $smokeTimer.Add_Tick({
                 $script:SmokePhase++
                 switch($script:SmokePhase){
-                    1{$script:Canvas.Refresh();Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "orbit");Open-SystemMap}
+                    1{
+                        $savedSmokeScanner=[int]$script:G.Player.XRFScanner;$script:G.Player.XRFScanner=1
+                        $script:G.HoldButton=@{Action="XRF";Data=$null;Duration=$script:XRFHoldSeconds;Elapsed=$script:XRFHoldSeconds*0.55;Rectangle=[Drawing.RectangleF]::new(687,575,145,42);Mode="Orbit"}
+                        $script:MouseX=750;$script:MouseY=596;$script:Canvas.Refresh()
+                        Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "orbit")
+                        Cancel-HoldButton;$script:G.Player.XRFScanner=$savedSmokeScanner;Open-SystemMap
+                    }
                     2{$script:G.SelectedPlanet="Earth";$script:G.ConfirmTravel=$true}
                     4{$script:Canvas.Refresh();Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "system")}
                     5{Start-Travel "Earth"}
@@ -4750,7 +4852,7 @@ function Start-SpaceFrack {
                     16{Set-TraderTab "Trade";Add-InventoryItem "Water" 5}
                     17{Open-TradeQuantityPicker "Sell" "Water" "Add" 5}
                     18{Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "quantity")}
-                    19{$script:G.QuantityPicker.Value=3;Apply-TradeQuantityPicker;[void](Add-TradeItem "Buy" "Shield Cell (Small)" 1);Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "trader")}
+                    19{$script:G.QuantityPicker.Value=3;Apply-QuantityPicker;[void](Add-TradeItem "Buy" "Shield Cell (Small)" 1);Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "trader")}
                     20{Open-Contracts}
                     21{$script:G.SelectedQuest="earth_1";Invoke-QuestAction "earth_1"}
                     22{Save-SmokeCapture (Get-CaptureVariantPath $CapturePath "contracts")}

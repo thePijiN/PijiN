@@ -11,9 +11,7 @@
 #     /__/:/       \  \::/       \__\::/       \  \::/       \  \:\     /__/:/       |__|:|~                 /__/:/       \  \:\         /__/:/       \  \::/   
 #     \__\/         \__\/            ~~         \__\/         \__\/     \__\/         \__\|                  \__\/         \__\/         \__\/         \__\/    
 # MODULAR MENU - Powershell 5.1 Utility by PijiN
-$ScriptVersion = '0.0.3' 
-
-Start-Sleep -seconds 10
+$ScriptVersion = '0.0.4' 
 # region ### Mainmenu Header ###
 function DetectActivTrak { return Test-Path "C:\Windows\SysWOW64\aamdata\atutil.exe" }
 function DetectBlackpoint { return Test-Path "C:\Program Files (x86)\Blackpoint" }
@@ -194,10 +192,10 @@ function Show-Header {
     $ltColor = if ($global:AgentID -eq 'N/A') { 'Red' } else { 'Green' }
     $currentUserDomain, $currentUser = (whoami) -split '\\'
     $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-    $userColor = if ($isAdmin) { 'DarkYellow' } else { 'DarkCyan' }
+    $userColor = if ($isAdmin) { 'Green' } else { 'Red' }
     Write-Host ($art[3].PadRight($artWidth)) -NoNewLine -ForegroundColor DarkCyan
     Write-Host ' Ran As: ' -NoNewLine -ForegroundColor DarkGray
-    Write-Host $currentUserDomain -NoNewLine -ForegroundColor Blue
+    Write-Host $currentUserDomain -NoNewLine -ForegroundColor DarkYellow
     Write-Host '\' -NoNewLine -ForegroundColor DarkGray
     Write-Host $currentUser -ForegroundColor $userColor #-NoNewLine
 	<# LT ID
@@ -268,60 +266,117 @@ $script:MenuConfig = @{
 		Main = @{
             Title = 'Main Menu'
             Items = @(
-                @{ Label = 'Separator';     Color = 'DarkYellow'; Desc = '~ Main Menu ~';              Separator = $true }
-                @{ Label = 'Reporting';     Color = 'Yellow';     Desc = '    - Gather information';   Submenu = 'Reporting' }
-                @{ Label = 'Configuration'; Color = 'Yellow';     Desc = '- Change system settings'; Submenu = 'Configuration' }
-                @{ Label = 'Utility';       Color = 'Yellow';     Desc = '      - Tools and cleanup'; Submenu = 'Utility' }
-                @{ Label = 'Intune';        Color = 'Yellow';     Desc = '       - Intune tooling';  Submenu = 'Intune' }
+                @{ Label = 'Separator';     Color = 'DarkYellow'; Desc = ' ~ Main Menu ~ ';              Separator = $true }
+				@{ Label = 'Games';         Color = 'White';      Desc = '        - Terminal-based games   |';  Submenu = 'Games' }
+                @{ Label = 'Reporting';     Color = 'Yellow';     Desc = '    - Gather information     |';   Submenu = 'Reporting' }
+                @{ Label = 'Configuration'; Color = 'Yellow';     Desc = '- Change system settings |'; Submenu = 'Configuration' }
+                @{ Label = 'Utility';       Color = 'Yellow';     Desc = '      - Tools and cleanup      |'; Submenu = 'Utility' }
+                @{ Label = 'Intune';        Color = 'Yellow';     Desc = '       - Intune tooling         |';  Submenu = 'Intune' }
                 @{ Label = 'Separator';                                                               Separator = $true }
-                @{ Label = 'About';         Color = 'White';      Desc = 'Info / help';              Action = { Show-About } }
-                @{ Label = 'Report Bug';    Color = 'Red';        Desc = 'Submit feedback';          Action = { Report-Bug } }
-                @{ Label = 'Spacegame';     Color = 'DarkCyan';   Desc = 'Far out';            Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Spacegame.ps1" } }
+                @{ Label = 'About';         Color = 'White';      Desc = 'Info / help                         |';              Action = { Show-About } }
+                @{ Label = 'Report Bug';    Color = 'Red';        Desc = 'Submit feedback                |';          Action = { Report-Bug } }
+            )
+        }
+		
+		Games = @{
+            Title = 'Games Menu'
+            Items = @(
+				@{ Label = 'SpaceFrack'; Color = 'DarkCyan'; Desc = ' Windows Terminal Edition'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/SpaceFrack/Spacegame.ps1" } }
+                @{ Label = 'SpaceFrack'; Color = 'Cyan'; Desc = ' WinForms UI Edition'; Action = { RunExternalScript -noLog -hidden -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/SpaceFrack/SpaceFrack.ps1" } }
+				@{ Label = 'DELVE'; Color = 'Gray'; Desc = ' A 1980 Rogue-like'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Delve/DELVE.ps1" } }
+				@{ Label = 'TRON'; Color = 'Blue'; Desc = ' Tron: Light Cycles - Campaign, PvE, PvEvE, PvP, or PvPvP'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/TRON/Tron.ps1" } }
+				@{ Label = 'NULLWAKE'; Color = 'DarkMagenta'; Desc = ' A 2D wave-based defense roguelike in WinForms'; Action = { RunExternalScript -noLog -hidden -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/NULLWAKE/NULLWAKE.ps1" } }
             )
         }
  
         Reporting = @{
-            Title = 'Reporting'
+            Title = 'Reporting Menu'
             Items = @(
-                @{ Label = 'Separator';             Color = 'Cyan'; Desc = 'System Info';                                               Separator = $true }
+                @{ Label = 'Separator';             Color = 'Cyan'; Desc = 'System Info'; Separator = $true }
+				@{ Label = 'Build Report'; 			Desc = 'Generic machine info report'; 				  Action = { RunExternalScript -noLog -scriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Util/BuildReport.ps1" } }
                 @{ Label = 'Report Installed Apps'; Desc = 'Name, publisher, version, uninstall string';  Action = { Get-SystemReport } }
                 @{ Label = 'Report Printer Info';   Desc = 'Name, driver, port, default, status';         Action = { Get-SystemReport -Printers } }
                 @{ Label = 'Find App in Registry';  Desc = 'Search uninstall hives by display name';      Action = { FindAppRegHive } }
-                @{ Label = 'Separator';             Color = 'Cyan'; Desc = 'Windows';                                                   Separator = $true }
+				@{ Label = 'Get Machine Worth'; 	Desc = 'Estimate the current machines value in USD';  Action = { RunExternalScript -noLog -scriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Util/Get-MachineWorth.ps1" } }
+                @{ Label = 'Separator';             Color = 'Cyan'; Desc = 'Windows'; Separator = $true }
                 @{ Label = 'Show Activation Key';   Desc = 'OA3 firmware key (OEM/retail)';               Action = { Show-WindowsActivation } }
                 @{ Label = 'Export WiFi Profiles';  Desc = 'Saves .xml files with plaintext passwords';   Action = { Export-WiFiProfiles } }
+				
             )
         }
  
         Configuration = @{
-            Title = 'Configuration'
+            Title = 'Configuration Menu'
             Items = @(
-                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'System';                                                            Separator = $true }
+				@{ Label = 'Configurizer';     				Color = 'Yellow'; Desc = ' Configure Windows to spec (or just report)';   Submenu = 'Configurizer' }
+                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'System';                            Separator = $true }
                 @{ Label = 'Rename Computer';               Desc = 'Set hostname, prompt to reboot';                    Action = { Rename-Computer-Prompt } }
                 @{ Label = 'Set Timezone';                  Desc = 'EST / CST / MST / PST and more';                    Action = { Set-TimezoneMenu } }
                 @{ Label = 'Set Power Plan';                Desc = 'Always On, standard, or custom screen timeout';     Action = { Set-PowerPlan } }
                 @{ Label = 'Toggle Taskbar Seconds';        Desc = 'Show/hide seconds in the clock';                    Action = { ToggleTaskbarSeconds } }
-                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'Sign-In';                                                           Separator = $true }
-                @{ Label = 'Clear Windows HELLO PIN';       Desc = 'Requires SYSTEM - clears Ngc + disables policy';   Action = { ClearPin } }
+                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'Sign-In';                           Separator = $true }
+                @{ Label = 'Clear Windows HELLO PIN';       Desc = 'Requires SYSTEM - clears Ngc + disables policy';    Action = { ClearPin } }
                 @{ Label = 'Disable Enrollment Checks';     Desc = 'Skip first sign-in status pages after Entra join';  Action = { DisableEnrollmentChecksOnSignIn } }
                 @{ Label = 'Enable Web Sign-On';            Desc = 'Enable WSI + Windows HELLO + UAC via registry';     Action = { EnableWenSignOn } }
                 @{ Label = 'Disable Web Sign-On';           Desc = 'Remove WSI registry keys, optionally disable UAC';  Action = { DisableWebSignOn } }
-                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'BitLocker';                                                         Separator = $true }
+                @{ Label = 'Separator';                     Color = 'Cyan'; Desc = 'BitLocker';                         Separator = $true }
                 @{ Label = 'Activate BitLocker';            Desc = 'Enable encryption on C:\, attempt Entra backup';    Action = { ActivateBitlocker } }
                 @{ Label = 'Rotate BitLocker Recovery Key'; Desc = 'Replace protector without decrypting';              Action = { ResetBitlockerKey } }
+				
+				@{ Label = 'Separator'; Color = 'Yellow'; Desc = 'Updates'; Separator = $true }
+                @{ Label = 'Install Windows Updates';      Desc = 'Install applicable Windows updates';      Action = { Invoke-Configurizer -Arguments @('-InstallWindowsUpdates') } }
+                @{ Label = 'Install Manufacturer Updates'; Desc = 'Install HP/Dell/Lenovo drivers/firmware as-needed';    Action = { Invoke-Configurizer -Arguments @('-InstallManufacturerUpdates') } }
+            )
+        }
+		Configurizer = @{
+            Title = 'Configurizer Menu'
+            Items = @(
+                @{ Label = 'Separator'; Color = 'Cyan'; Desc = 'Review and full runs'; Separator = $true }
+                @{ Label = 'Audit Everything';       Desc = 'Audit all operations without applying changes'; Action = { Invoke-Configurizer -Arguments @('-Audit') } }
+                @{ Label = 'Preview Standard Apply'; Desc = 'Run the standard set with WhatIf (preview)';               Action = { Invoke-Configurizer -Arguments @('-All', '-WhatIf') } }
+				@{ Label = 'List Operations';         Desc = 'Show the operation catalog and All membership'; Action = { Invoke-Configurizer -Arguments @('-ListOperations') } }
+                @{ Label = 'Apply Standard Set';      Color = 'Red'; Desc = 'Apply everything included in All (Dont do it)'; Action = { Invoke-Configurizer -Arguments @('-All') } }    
+
+				@{ Label = 'Separator'; Color = 'Cyan'; Desc = 'System Theme'; Separator = $true }
+                @{ Label = 'Dark Mode'; Desc = 'Apply Dark Mode system-wide'; Action = { Invoke-Configurizer -Arguments @('-DarkMode') } }
+				@{ Label = 'Light Mode'; Desc = 'Apply Light Mode system-wide'; Action = { Invoke-Configurizer -Arguments @('-LightMode') } }
+
+                @{ Label = 'Separator'; Color = 'Cyan'; Desc = 'Windows configuration'; Separator = $true }
+                @{ Label = 'Configure Power';           Desc = 'Apply AC and battery timeout settings';       Action = { Invoke-Configurizer -Arguments @('-ConfigurePower') } }
+                @{ Label = 'Configure Content Delivery'; Desc = 'Disable selected suggestions and content';    Action = { Invoke-Configurizer -Arguments @('-ConfigureContentDelivery') } }
+                @{ Label = 'Configure Teams QoS';       Desc = 'Apply Teams audio, video, and sharing QoS';    Action = { Invoke-Configurizer -Arguments @('-ConfigureTeamsQoS') } }
+                @{ Label = 'Configure UAC';             Desc = 'Apply the embedded UAC policy values';        Action = { Invoke-Configurizer -Arguments @('-ConfigureUAC') } }
+                @{ Label = 'Configure Time';            Desc = 'Set time zone and resync Windows Time';       Action = { Invoke-Configurizer -Arguments @('-ConfigureTime') } }
+                @{ Label = 'Configure Taskbar';         Desc = 'Apply taskbar, search, and Task View settings'; Action = { Invoke-Configurizer -Arguments @('-ConfigureTaskbar') } }
+                @{ Label = 'Configure Taskbar Pins';    Desc = 'Deploy the embedded taskbar pin layout';      Action = { Invoke-Configurizer -Arguments @('-ConfigureTaskbarPins') } }
+                @{ Label = 'Create Office Shortcuts';   Desc = 'Create shortcuts for installed Office apps'; Action = { Invoke-Configurizer -Arguments @('-ConfigureOfficeShortcuts') } }
+                @{ Label = 'Configure BitLocker';       Color = 'Yellow'; Desc = 'Apply system-drive BitLocker settings'; Action = { Invoke-Configurizer -Arguments @('-ConfigureBitLocker') } }
+
+                @{ Label = 'Separator'; Color = 'Yellow'; Desc = 'Applications'; Separator = $true }
+                @{ Label = 'Install Standard Apps';     Desc = 'Install missing catalog apps with winget';   Action = { Invoke-Configurizer -Arguments @('-InstallApps') } }
+                @{ Label = 'Install Microsoft 365';     Desc = 'Install the embedded Microsoft 365 package'; Action = { Invoke-Configurizer -Arguments @('-InstallMicrosoft365') } }
+
+                @{ Label = 'Separator'; Color = 'Red'; Desc = 'Removal'; Separator = $true }
+                @{ Label = 'Remove Windows Bloatware';      Color = 'Red'; Desc = 'Remove matching Windows applications'; Action = { Invoke-Configurizer -Arguments @('-RemoveWindowsBloatware') } }
+                @{ Label = 'Remove Manufacturer Bloatware'; Color = 'Red'; Desc = 'Remove matching OEM applications';     Action = { Invoke-Configurizer -Arguments @('-RemoveManufacturerBloatware') } }
+                #@{ Label = 'Clean BitLocker Documents';     Color = 'Red'; Desc = 'Delete matching recovery documents';   Action = { Invoke-Configurizer -Arguments @('-CleanupBitLockerDocuments') } }
+
+                @{ Label = 'Separator'; Color = 'Yellow'; Desc = 'Updates'; Separator = $true }
+                @{ Label = 'Install Windows Updates';      Desc = 'Install applicable Windows updates';      Action = { Invoke-Configurizer -Arguments @('-InstallWindowsUpdates') } }
+                @{ Label = 'Install Manufacturer Updates'; Desc = 'Install HP/Dell/Lenovo drivers/firmware as-needed';    Action = { Invoke-Configurizer -Arguments @('-InstallManufacturerUpdates') } }
             )
         }
  
         Utility = @{
-            Title = 'Utility'
+            Title = 'Utility Menu'
             Items = @(
-                @{ Label = 'Separator';                      Color = 'Yellow'; Desc = '\  Maintenance  /';                                                      Separator = $true }
+                @{ Label = 'Separator';                      Color = 'Yellow'; Desc = '\  Maintenance  /';           Separator = $true }
                 @{ Label = 'Clear Temp Files';               Desc = 'Purge temp folders with size preview';          Action = { Clear-TempFiles } }
                 @{ Label = 'Reset Network Stack';            Desc = 'Flush DNS, Winsock reset, release/renew IP';    Action = { Reset-NetworkStack } }
                 @{ Label = 'Reset Print Spooler';            Desc = 'Stop spooler, clear queue, restart';            Action = { Reset-PrintSpooler } }
                 @{ Label = 'Remove All Printers';            Desc = 'Wipe printers/drivers (spares virtual ones)';   Action = { Reset-PrinterSubsystem } }
                 @{ Label = 'Manage Startup Items';           Desc = 'View/disable reg, folder, and task startups';   Action = { Manage-StartupItems } }
-                @{ Label = 'Separator';                      Color = 'Red'; Desc = '==>  Tools  <==';                                                            Separator = $true }
+                @{ Label = 'Separator';                      Color = 'Red'; Desc = '==>  Tools  <==';                Separator = $true }
 				@{ Label = 'PS2EXE Compiler'; 				 Desc = 'Guided ps2exe wrapper'; 						 Action = { Invoke-PS2EXE } }
 				@{ Label = 'Image Resizer'; 				 Desc = 'Supply image, redefine height/width'; 			 Action = { Invoke-ImageResizer } }
                 @{ Label = 'Open Shell as SYSTEM';           Desc = 'Launch PS or CMD via scheduled task';           Action = { Open-AsSystem } }
@@ -331,19 +386,19 @@ $script:MenuConfig = @{
 				@{ Label = 'Separator';						 Color = 'Cyan'; Desc = '~*  Scheduled Tasks / Startup  *~'; Separator = $true }
 				@{ Label = 'Create New Task';				 Desc = 'Create Scheduled Task';						 Action = { Invoke-TaskCreator } }
 				@{ Label = 'Startup App Manager'; 			 Desc = 'Startup App Manager';					 Action = { Invoke-LaunchScriptManager } }
-                @{ Label = 'Separator';                      Color = 'DarkRed'; Desc = '-=#  Major Version Update  #+-';                                                      Separator = $true }
+                @{ Label = 'Separator';                      Color = 'DarkRed'; Desc = '-=#  Major Version Update  #+-'; Separator = $true }
                 @{ Label = 'Upgrade to Windows 11';          Desc = 'Download and launch Update Assistant';          Action = { Invoke-Windows11Upgrade } }
                 @{ Label = 'Upgrade to Windows 11 (Silent)'; Desc = 'Same, unattended';                              Action = { Invoke-Windows11Upgrade -Silent } }
             )
         }
  
         Intune = @{
-            Title = 'Intune Tools'
+            Title = 'Intune Menu'
             Items = @(
-				@{ Label = 'Separator';                 Color = 'Cyan'; Desc = '~  App Packaging  ~';                                                         Separator = $true }
+				@{ Label = 'Separator';                 Color = 'Cyan'; Desc = '~  App Packaging  ~'; Separator = $true }
                 @{ Label = 'IntuneWinAppUtil';          Desc = 'Create .intunewin packages';                       Action = { IntuneWinAppUtil } }
                 @{ Label = 'IntuneWinAppUtil Decoder';  Desc = 'Inspect/decode .intunewin packages';               Action = { IntuneWinAppUtilDecoder } }
-                @{ Label = 'Separator';                 Color = 'DarkYellow'; Desc = '>  Device  <';                                                            Separator = $true }
+                @{ Label = 'Separator';                 Color = 'DarkYellow'; Desc = '>  Device  <'; Separator = $true }
                 @{ Label = 'Sync Intune Now';           Desc = 'Trigger immediate Intune/Entra sync';              Action = { IntuneSyncNow } }
                 @{ Label = 'Intune Diagnostic';         Desc = 'HTML report of recent Intune deployments';         Action = { IntuneDiagnostic } }
                 @{ Label = 'Export AutoPilot CSV';      Desc = 'Save hardware hash to PSMM\AutopilotCSV.csv';      Action = { IntuneAutopilotCSV } }
@@ -485,47 +540,43 @@ function RunExternalScript {
         $isBatch = $ext -in @('.cmd', '.bat')
 
         Write-Host "Downloading $($ext.TrimStart('.').ToUpper()) from $ScriptUrl..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $ScriptUrl -OutFile $tempPath -UseBasicParsing
+        Invoke-WebRequest -Uri $ScriptUrl -OutFile $tempPath -UseBasicParsing -ErrorAction Stop
         Unblock-File -Path $tempPath -ErrorAction SilentlyContinue
+
+        $shouldWait = $Wait -or $Remove
 
         # ==========================================================
         # BATCH / CMD EXECUTION
         # ==========================================================
         if ($isBatch) {
+            $batchDescription = if ($Hidden) { 'hidden batch' } else { 'batch' }
+            Write-Host "Running $batchDescription as admin..." -ForegroundColor Yellow
 
-            if ($Hidden) {
-                Write-Host "Running hidden batch as admin..." -ForegroundColor Yellow
-                if ($Wait) {
-                    $proc = Start-CmdShell -FilePath $tempPath -PassThru -Elevated -Hidden
-                    $proc.WaitForExit()
-                    if ((Test-Path $tempPath) -and -not $Remove) { Remove-Item $tempPath -Force }
-                } else {
-                    Start-CmdShell -FilePath $tempPath -Elevated -Hidden
+            if ($shouldWait) {
+                $batchParameters = @{
+                    FilePath = $tempPath
+                    PassThru = $true
+                    Wait = $true
+                    Elevated = $true
                 }
-            } else {
-                Write-Host "Running batch as admin..." -ForegroundColor Yellow
-                if ($Wait) {
-                    $proc = Start-CmdShell -FilePath $tempPath -PassThru -Elevated
-                    $proc.WaitForExit()
-                    if ((Test-Path $tempPath) -and -not $Remove) { Remove-Item $tempPath -Force }
-                } else {
-                    Start-CmdShell -FilePath $tempPath -Elevated
+                if ($Hidden) {
+                    $batchParameters.Hidden = $true
+                }
+
+                Start-CmdShell @batchParameters | Out-Null
+                if ($Remove -and (Test-Path -LiteralPath $tempPath)) {
+                    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
                 }
             }
-
-            # Self-delete for batch: append a del command via a tiny wrapper bat
-            # (can't inject mid-run and can't use $Remove footer like PS can)
-            if ($Remove) {
-                $wrapperPath = Join-Path $tempFolder "rm_$fileName"
-                @"
-@echo off
-call "$tempPath"
-del /f /q "$tempPath"
-del /f /q "%~f0"
-"@ | Out-File -FilePath $wrapperPath -Encoding ASCII
-                # Re-launch via wrapper instead - notify caller
-                Write-Warning "-Remove for batch files uses a wrapper. Launching wrapper instead of original."
-                $tempPath = $wrapperPath
+            else {
+                $batchParameters = @{
+                    FilePath = $tempPath
+                    Elevated = $true
+                }
+                if ($Hidden) {
+                    $batchParameters.Hidden = $true
+                }
+                Start-CmdShell @batchParameters | Out-Null
             }
 
             Write-Host "Done." -ForegroundColor Green
@@ -536,39 +587,17 @@ del /f /q "%~f0"
         # POWERSHELL - HIDDEN MODE
         # ==========================================================
         if ($Hidden) {
-
-            $hideConsole = @'
-Add-Type -Name Window -Namespace Console -MemberDefinition @"
-[DllImport("Kernel32.dll")]
-public static extern IntPtr GetConsoleWindow();
-[DllImport("user32.dll")]
-public static extern bool ShowWindow(IntPtr hWnd, Int32 nCmdShow);
-"@
-function Hide-ConsoleWindow {
-    $consolePtr = [Console.Window]::GetConsoleWindow()
-    [Console.Window]::ShowWindow($consolePtr, 0) | Out-Null
-}
-Hide-ConsoleWindow
-'@
-            $launcherPath    = Join-Path $tempFolder "launcher_$fileName"
-            $launcherContent = $hideConsole + "`n. `"$tempPath`""
-
-            if ($Remove) {
-                $launcherContent += "`nStart-Sleep -Seconds 2; Remove-Item -LiteralPath '$launcherPath' -Force"
-            }
-
-            $launcherContent | Out-File -FilePath $launcherPath -Encoding UTF8
-
             Write-Host "Running hidden PS script as admin..." -ForegroundColor Yellow
-            $psArgs = @("-NoExit", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$launcherPath`"")
+            $psArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$tempPath`"")
 
-            if ($Wait) {
-                $proc = Start-PreferredShell -ArgumentList $psArgs -PassThru -Elevated -ForceClassic
-                $proc.WaitForExit()
-                if ((Test-Path $tempPath)     -and -not $Remove) { Remove-Item $tempPath     -Force }
-                if ((Test-Path $launcherPath) -and -not $Remove) { Remove-Item $launcherPath -Force }
-            } else {
-                Start-PreferredShell -ArgumentList $psArgs -Elevated -ForceClassic
+            if ($shouldWait) {
+                Start-PreferredShell -ArgumentList $psArgs -PassThru -Wait -Elevated -ForceClassic | Out-Null
+                if ($Remove -and (Test-Path -LiteralPath $tempPath)) {
+                    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+                }
+            }
+            else {
+                Start-PreferredShell -ArgumentList $psArgs -Elevated -ForceClassic | Out-Null
             }
         }
 
@@ -577,24 +606,17 @@ Hide-ConsoleWindow
         # ==========================================================
         else {
 
-            if ($Remove) {
-                $footer = @'
-
-Start-Sleep -Seconds 2
-Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
-'@
-                Add-Content -Path $tempPath -Value $footer -Encoding UTF8
-            }
-
             Write-Host "Running PS script as admin..." -ForegroundColor Yellow
-            $psArgs = @("-ExecutionPolicy", "Bypass", "-File", "`"$tempPath`"")
+            $psArgs = @('-NoLogo', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$tempPath`"")
 
-            if ($Wait) {
-                $proc = Start-PreferredShell -ArgumentList $psArgs -PassThru -Elevated
-                $proc.WaitForExit()
-                if ((Test-Path $tempPath) -and -not $Remove) { Remove-Item $tempPath -Force }
-            } else {
-                Start-PreferredShell -ArgumentList $psArgs -Elevated
+            if ($shouldWait) {
+                Start-PreferredShell -ArgumentList $psArgs -PassThru -Wait -Elevated -ForceClassic | Out-Null
+                if ($Remove -and (Test-Path -LiteralPath $tempPath)) {
+                    Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+                }
+            }
+            else {
+                Start-PreferredShell -ArgumentList $psArgs -Elevated | Out-Null
             }
         }
 
@@ -678,12 +700,11 @@ function Show-About {
     Write-Host ""
     Write-Host "  MENUS" -ForegroundColor White
     $menuDescriptions = [ordered]@{
-        Deployment    = "Deploy, image , provision"
-        Intune        = "Sync, package apps, report Intune info, make Intune changes"
-        Configuration = "Rename, timezone, power plan, BitLocker, PIN, WebSignOn"
-        Reporting     = "App/printer reports, activation key, WiFi export"
-        Utility       = "Startup mgr, SYSTEM shell, network reset, temp cleanup, Win11 upgrade"
-		WhateverElse  = "Anything else you add"
+        Games         = "Terminal and WinForms games fetched from the PijiN repository"
+        Reporting     = "Build, app, printer, activation, WiFi, and machine-value reports"
+        Configuration = "Configurizer, naming, time, power, sign-in, and BitLocker tools"
+        Utility       = "Maintenance, packaging, SYSTEM shell, startup, and upgrade tools"
+        Intune        = "Application packaging, device sync, diagnostics, and AutoPilot export"
     }
     foreach ($menu in $menuDescriptions.Keys) {
         Write-Host "  " -NoNewLine
@@ -696,9 +717,9 @@ function Show-About {
     Write-Host "  HEADER" -ForegroundColor White
     Write-Host "  Hostname, serial, join status, LT agent ID, and running user." -ForegroundColor DarkGray
     Write-Host "  Running user is " -NoNewLine -ForegroundColor DarkGray
-    Write-Host "DarkYellow" -NoNewLine -ForegroundColor DarkYellow
+    Write-Host "Green" -NoNewLine -ForegroundColor Green
     Write-Host " if admin, " -NoNewLine -ForegroundColor DarkGray
-    Write-Host "DarkCyan" -NoNewLine -ForegroundColor DarkCyan
+    Write-Host "Red" -NoNewLine -ForegroundColor Red
     Write-Host " if standard." -ForegroundColor DarkGray
     Write-Host "  Detected agents shown inline: " -NoNewLine -ForegroundColor DarkGray
     Write-Host "Green" -NoNewLine -ForegroundColor Green
@@ -709,12 +730,14 @@ function Show-About {
     Write-Host "  $sep2" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "  NOTES" -ForegroundColor White
-    Write-Host "  - Most deployment actions require an internet connection." -ForegroundColor DarkGray
-    Write-Host "  - RunExternalScript calls are logged to " -NoNewLine -ForegroundColor DarkGray
-    Write-Host "Azure Table Storage" -NoNewLine -ForegroundColor Yellow
-    Write-Host ",`n    unless invoked with -noLog." -ForegroundColor DarkGray
-    Write-Host "  - Pretty much anything stored is in " -NoNewLine -ForegroundColor DarkGray
+    Write-Host "  - Repository-backed actions require an internet connection." -ForegroundColor DarkGray
+    Write-Host "  - Built-in external-script actions use -NoLog; custom actions can enable" -ForegroundColor DarkGray
+    Write-Host "    Azure Table logging after a valid Table SAS URL is configured." -ForegroundColor DarkGray
+    Write-Host "  - External-script downloads are retained in " -NoNewLine -ForegroundColor DarkGray
     Write-Host '$env:TEMP\PSMM\' -NoNewLine -ForegroundColor Cyan
+    Write-Host "." -ForegroundColor DarkGray
+    Write-Host "  - Launcher and Configurizer caches are stored in " -NoNewLine -ForegroundColor DarkGray
+    Write-Host '$env:LOCALAPPDATA\PijiN\' -NoNewLine -ForegroundColor Cyan
     Write-Host "." -ForegroundColor DarkGray
     Write-Host "  - WinGet installs run in the current session window." -ForegroundColor DarkGray
     Write-Host "  - WebSignOn toggles and PIN clear affect the current user." -ForegroundColor DarkGray
@@ -1070,6 +1093,265 @@ function Export-WiFiProfiles { # Exports the WiFi connections in Known Networks 
 }
 #endregion 
 # region == Configuration ==
+function Invoke-Configurizer {
+    [CmdletBinding()]
+    param (
+        [string[]]$Arguments = @(),
+        [string]$ScriptUrl = 'https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Util/Configurizer.ps1'
+    )
+
+    function ConvertTo-ConfigurizerProcessArgument {
+        param (
+            [AllowNull()]
+            [AllowEmptyString()]
+            [string]$Value
+        )
+
+        if ($null -eq $Value) {
+            $Value = ''
+        }
+
+        if ($Value.Length -gt 0 -and $Value -notmatch '[\s"]') {
+            return $Value
+        }
+
+        $builder = New-Object System.Text.StringBuilder
+        [void]$builder.Append('"')
+        $backslashCount = 0
+
+        foreach ($character in $Value.ToCharArray()) {
+            if ($character -eq '\') {
+                $backslashCount++
+                continue
+            }
+
+            if ($character -eq '"') {
+                [void]$builder.Append(('\' * (($backslashCount * 2) + 1)))
+                [void]$builder.Append('"')
+                $backslashCount = 0
+                continue
+            }
+
+            if ($backslashCount -gt 0) {
+                [void]$builder.Append(('\' * $backslashCount))
+                $backslashCount = 0
+            }
+
+            [void]$builder.Append($character)
+        }
+
+        if ($backslashCount -gt 0) {
+            [void]$builder.Append(('\' * ($backslashCount * 2)))
+        }
+
+        [void]$builder.Append('"')
+        return $builder.ToString()
+    }
+
+    function Assert-ValidConfigurizerScript {
+        param([Parameter(Mandatory = $true)][string]$Path)
+
+        if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+            throw "Configurizer script was not found at $Path."
+        }
+
+        $file = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if ($file.Length -eq 0) {
+            throw 'The Configurizer script is empty.'
+        }
+
+        $scriptText = [System.IO.File]::ReadAllText($Path)
+        if ($scriptText.TrimStart() -match '^<(?:!doctype|html)') {
+            throw 'GitHub returned an HTML page instead of a PowerShell script.'
+        }
+
+        $parseTokens = $null
+        $parseErrors = $null
+        [System.Management.Automation.Language.Parser]::ParseFile(
+            $Path,
+            [ref]$parseTokens,
+            [ref]$parseErrors
+        ) | Out-Null
+
+        if ($parseErrors.Count -gt 0) {
+            throw ('The Configurizer script has {0} PowerShell syntax error(s).' -f $parseErrors.Count)
+        }
+    }
+
+    function Confirm-RunCachedConfigurizer {
+        param([Parameter(Mandatory = $true)][string]$Path)
+
+        Write-Host ("Validated cached script: $Path") -ForegroundColor Cyan
+        while ($true) {
+            Write-Host ''
+            Write-Host '[L] Run the validated cached Configurizer' -ForegroundColor Yellow
+            Write-Host '[X] Cancel' -ForegroundColor DarkGray
+
+            try {
+                $choice = (Read-Host 'Choose an option').Trim().ToUpperInvariant()
+            }
+            catch {
+                return $false
+            }
+
+            switch ($choice) {
+                'L' { return $true }
+                'X' { return $false }
+                default { Write-Host 'Invalid choice.' -ForegroundColor Red }
+            }
+        }
+    }
+
+    $configurizerDirectory = Join-Path -Path $env:LOCALAPPDATA -ChildPath 'PijiN'
+    $configurizerPath = Join-Path -Path $configurizerDirectory -ChildPath 'Configurizer.ps1'
+    $downloadPath = Join-Path -Path $configurizerDirectory -ChildPath 'Configurizer.download'
+    $backupPath = Join-Path -Path $configurizerDirectory -ChildPath 'Configurizer.previous'
+    $runConfigurizer = $false
+
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+        if (-not (Test-Path -LiteralPath $configurizerDirectory -PathType Container)) {
+            New-Item -Path $configurizerDirectory -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        }
+
+        if ([System.IO.File]::Exists($backupPath)) {
+            if ([System.IO.File]::Exists($configurizerPath)) {
+                [System.IO.File]::Delete($backupPath)
+            }
+            else {
+                [System.IO.File]::Move($backupPath, $configurizerPath)
+            }
+        }
+
+        if ([System.IO.File]::Exists($downloadPath)) {
+            [System.IO.File]::Delete($downloadPath)
+        }
+
+        $cacheBuster = [System.DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $uriBuilder = New-Object System.UriBuilder -ArgumentList $ScriptUrl
+        $existingQuery = $uriBuilder.Query.TrimStart('?')
+        $cacheQuery = 'cachebust={0}' -f $cacheBuster
+        $uriBuilder.Query = if ([string]::IsNullOrWhiteSpace($existingQuery)) {
+            $cacheQuery
+        }
+        else {
+            $existingQuery + '&' + $cacheQuery
+        }
+        $downloadUri = $uriBuilder.Uri.AbsoluteUri
+
+        Write-Host 'Downloading the latest Configurizer...' -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $downloadUri `
+            -OutFile $downloadPath `
+            -UseBasicParsing `
+            -TimeoutSec 20 `
+            -Headers @{ 'Cache-Control' = 'no-cache' } `
+            -ErrorAction Stop
+
+        Assert-ValidConfigurizerScript -Path $downloadPath
+
+        $installDownload = $true
+        if ([System.IO.File]::Exists($configurizerPath)) {
+            try {
+                Assert-ValidConfigurizerScript -Path $configurizerPath
+                $downloadedHash = (Get-FileHash -LiteralPath $downloadPath -Algorithm SHA256 -ErrorAction Stop).Hash
+                $cachedHash = (Get-FileHash -LiteralPath $configurizerPath -Algorithm SHA256 -ErrorAction Stop).Hash
+                if ($downloadedHash -eq $cachedHash) {
+                    $installDownload = $false
+                    [System.IO.File]::Delete($downloadPath)
+                    Write-Host 'Configurizer is already current.' -ForegroundColor Green
+                }
+            }
+            catch {
+                $installDownload = $true
+            }
+        }
+
+        if ($installDownload) {
+            if ([System.IO.File]::Exists($configurizerPath)) {
+                [System.IO.File]::Replace($downloadPath, $configurizerPath, $backupPath, $true)
+            }
+            else {
+                [System.IO.File]::Move($downloadPath, $configurizerPath)
+            }
+
+            Unblock-File -LiteralPath $configurizerPath -ErrorAction SilentlyContinue
+            Assert-ValidConfigurizerScript -Path $configurizerPath
+            Write-Host 'Configurizer cache updated.' -ForegroundColor Green
+        }
+
+        $runConfigurizer = $true
+    }
+    catch {
+        $updateError = $_.Exception.Message
+        Write-Host ("The latest Configurizer could not be downloaded or installed: $updateError") -ForegroundColor Red
+
+        try {
+            Assert-ValidConfigurizerScript -Path $configurizerPath
+            $runConfigurizer = Confirm-RunCachedConfigurizer -Path $configurizerPath
+        }
+        catch {
+            Write-Host ("No valid cached Configurizer is available: $($_.Exception.Message)") -ForegroundColor Red
+            $runConfigurizer = $false
+        }
+    }
+    finally {
+        if (Test-Path -LiteralPath $downloadPath) {
+            Remove-Item -LiteralPath $downloadPath -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $backupPath) {
+            Remove-Item -LiteralPath $backupPath -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    if (-not $runConfigurizer) {
+        Write-Host 'Configurizer was not started.' -ForegroundColor Yellow
+        Pause-Menu
+        return
+    }
+
+    try {
+        $powerShellPath = Join-Path -Path $PSHOME -ChildPath 'powershell.exe'
+        if (-not (Test-Path -LiteralPath $powerShellPath -PathType Leaf)) {
+            throw "Windows PowerShell was not found at $powerShellPath."
+        }
+
+        $processArguments = @(
+            '-NoLogo'
+            '-NoProfile'
+            '-ExecutionPolicy'
+            'Bypass'
+            '-File'
+            $configurizerPath
+        ) + @($Arguments)
+
+        $argumentString = (($processArguments | ForEach-Object {
+            ConvertTo-ConfigurizerProcessArgument -Value $_
+        }) -join ' ')
+
+        if ($Arguments.Count -gt 0) {
+            Write-Host ('Configurizer arguments: ' + ($Arguments -join ' ')) -ForegroundColor DarkGray
+        }
+
+        $process = Start-Process -FilePath $powerShellPath `
+            -ArgumentList $argumentString `
+            -NoNewWindow `
+            -Wait `
+            -PassThru `
+            -ErrorAction Stop
+
+        switch ($process.ExitCode) {
+            0 { Write-Host 'Configurizer completed successfully.' -ForegroundColor Green }
+            2 { Write-Host 'Configurizer audit found noncompliant settings.' -ForegroundColor Yellow }
+            default { Write-Host ("Configurizer exited with code $($process.ExitCode).") -ForegroundColor Red }
+        }
+    }
+    catch {
+        Write-Host ("Configurizer failed: $($_.Exception.Message)") -ForegroundColor Red
+    }
+
+    Pause-Menu
+}
 function Rename-Computer-Prompt { # Ez force rename, with optional reboot prompt
     $newName = Read-Host "`n  Enter new computer name"
     if (-not $newName) {
@@ -3673,3 +3955,4 @@ Show-Menu -MenuKey $script:MenuConfig.Settings.RootMenu
 # 0.0.1 - 04/12/2026 - Release
 # 0.0.2 - 05/24/2026 - Improved Header formatting, improved Set-PowerPlan function
 # 0.0.3 - 06/12/2026 - Improved header. Improved some functions. Added some new functions(Send-ToastNotification, Watch-LogFile, Invoke-LaunchScriptManager, Invoke-TaskCreator)/options to invoke them. Tweaked some menus.
+# 0.0.4 - 07/18/2026 - Added Games Menu. Added Configurizer Menu. Added Build Report option. Color tweaks.

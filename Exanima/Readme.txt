@@ -13,10 +13,10 @@ This utility allows you to easily adjust your in-game cursor colors (for both In
 To compile the .ps1 as .exe yourself using PS2EXE - Correct the paths (Source and Dest) and then run the command(s) below in PowerShell: 
 
 # Compile Exanima Save Manager
-ps2exe "C:\Path\To\Exanima_SaveManager.ps1" "C:\Path\ToWhereYouWant\Exanima_SaveManager.exe" -title "Exanima Save Manager" -description "Backup/Restore/Convert save to checkpoint" -version 2 -requireAdmin -noConsole -DPIAware
+ps2exe "C:\Path\To\Exanima_SaveManager.ps1" "C:\Path\ToWhereYouWant\Exanima_SaveManager.exe" -title "Exanima Save Manager" -description "Backup/Restore/Convert save to checkpoint" -requireAdmin -noConsole -DPIAware
 
 # Compile Exanima Cursor Config
-ps2exe "C:\Path\To\Exanima_CursorConfig.ps1" "C:\Path\ToWhereYouWant\Exanima_CursorConfig.exe" -title "Exanima Cursor Editor" -description "Change Interation/Combat cursor color & size." -version 2 -requireAdmin -noConsole -DPIAware
+ps2exe "C:\Path\To\Exanima_CursorConfig.ps1" "C:\Path\ToWhereYouWant\Exanima_CursorConfig.exe" -title "Exanima Cursor Editor" -description "Change Interaction/Combat cursor color and size." -requireAdmin -noConsole -DPIAware
 
 # If you want the custom icons as well, download the .ico files, and append these arguments when you compile:
 -iconFile "C:\Path\To\Exaniman.ico"
