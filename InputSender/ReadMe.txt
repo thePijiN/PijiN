@@ -29,3 +29,9 @@ The config panel on the left exposes three behavioral modes:
 - **Delay before send** - inserts an optional sleep before firing input, useful if the target app needs a moment
 - **Execution mode** - a three-position slider toggling between press+release, hold-only, or release-only, with a configurable release delay
 - **Auto-repeat** - holds a `System.Windows.Forms.Timer` that re-fires the action at a set interval for as long as the button is physically held down
+
+The included executable is compiled from Invoke-InputSender.ps1. The launcher downloads the latest InputSender.ps1 from this repository, validates it, caches it under %LOCALAPPDATA%\PijiN, and runs the validated copy.
+
+To compile the launcher yourself using PS2EXE, correct the source and destination paths and run:
+
+ps2exe "C:\Path\To\Invoke-InputSender.ps1" "C:\Path\ToWhereYouWant\InputSender.exe" -title "Input Sender" -description "Send *any* input!" -iconFile "C:\Path\To\InputSender.ico" -requireAdmin -noConsole -DPIAware
