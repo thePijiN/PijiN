@@ -7,6 +7,7 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
+$script:LogicalCellWidth = 2
 $script:TurboDurationTicks = 12
 $script:TurboCooldownTicks = 80
 
@@ -632,6 +633,117 @@ function Set-BufferText {
     }
 }
 
+function Get-LogicalBoardWidth {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Snapshot
+    )
+
+    return [Math]::Max(1, [Math]::Floor($Snapshot.Width / $script:LogicalCellWidth))
+}
+
+function Set-ArenaCellBuffer {
+    param(
+        [Parameter(Mandatory = $true)]
+        [char[]] $Characters,
+
+        [Parameter(Mandatory = $true)]
+        [int16[]] $Attributes,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ScreenWidth,
+
+        [Parameter(Mandatory = $true)]
+        [int] $ScreenHeight,
+
+        [Parameter(Mandatory = $true)]
+        [int] $BoardWidth,
+
+        [Parameter(Mandatory = $true)]
+        [int] $X,
+
+        [Parameter(Mandatory = $true)]
+        [int] $Y,
+
+        [Parameter(Mandatory = $true)]
+        [char] $Character,
+
+        [Parameter(Mandatory = $true)]
+        [int16] $Attribute
+    )
+
+    if ($X -lt 0 -or $X -ge $BoardWidth -or $Y -lt 0 -or $Y -ge $ScreenHeight) {
+        return
+    }
+
+    $screenX = $X * $script:LogicalCellWidth
+    for ($offset = 0; $offset -lt $script:LogicalCellWidth; $offset++) {
+        $screenColumn = $screenX + $offset
+        if ($screenColumn -ge $ScreenWidth) {
+            break
+        }
+
+        $bufferIndex = ($Y * $ScreenWidth) + $screenColumn
+        $Characters[$bufferIndex] = $Character
+        $Attributes[$bufferIndex] = $Attribute
+    }
+}
+
+function Write-ArenaCell {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Snapshot,
+
+        [Parameter(Mandatory = $true)]
+        $Arena,
+
+        [Parameter(Mandatory = $true)]
+        [int] $X,
+
+        [Parameter(Mandatory = $true)]
+        [int] $Y,
+
+        [Parameter(Mandatory = $true)]
+        [char] $Character,
+
+        [Parameter(Mandatory = $true)]
+        [int16] $Attribute
+    )
+
+    Set-ArenaCellBuffer `
+        -Characters $Arena.Characters `
+        -Attributes $Arena.Attributes `
+        -ScreenWidth $Arena.ScreenWidth `
+        -ScreenHeight $Arena.ScreenHeight `
+        -BoardWidth $Arena.BoardWidth `
+        -X $X `
+        -Y $Y `
+        -Character $Character `
+        -Attribute $Attribute
+
+    $screenX = $X * $script:LogicalCellWidth
+    $writeWidth = [Math]::Min($script:LogicalCellWidth, ($Snapshot.Width - $screenX))
+    if ($writeWidth -le 0) {
+        return
+    }
+
+    $cellCharacters = New-Object "char[]" $writeWidth
+    $cellAttributes = New-Object "int16[]" $writeWidth
+    for ($offset = 0; $offset -lt $writeWidth; $offset++) {
+        $cellCharacters[$offset] = $Character
+        $cellAttributes[$offset] = $Attribute
+    }
+
+    [Tron.NativeConsole]::WriteBuffer(
+        $Snapshot.WindowLeft + $screenX,
+        $Snapshot.WindowTop + $Y,
+        $writeWidth,
+        1,
+        $cellCharacters,
+        $cellAttributes
+    )
+}
+
 function New-Player {
     param(
         [int] $Number,
@@ -1007,9 +1119,11 @@ function New-Arena {
         [int16[]] $PlayerTurboColorAttributes = @([int16] 48, [int16] 80, [int16] 32)
     )
 
-    $width = $Snapshot.Width
-    $height = $Snapshot.Height
-    $cellCount = $width * $height
+    $screenWidth = $Snapshot.Width
+    $screenHeight = $Snapshot.Height
+    $width = Get-LogicalBoardWidth -Snapshot $Snapshot
+    $height = $screenHeight
+    $cellCount = $screenWidth * $screenHeight
     $characters = New-Object "char[]" $cellCount
     $attributes = New-Object "int16[]" $cellCount
     $grid = [Array]::CreateInstance([int], $width, $height)
@@ -1031,19 +1145,44 @@ function New-Arena {
 
     for ($x = 0; $x -lt $width; $x++) {
         foreach ($y in @(1, ($height - 1))) {
-            $bufferIndex = ($y * $width) + $x
-            $characters[$bufferIndex] = [char] "#"
-            $attributes[$bufferIndex] = [int16] 8
             $grid[$x, $y] = 1
+            Set-ArenaCellBuffer `
+                -Characters $characters `
+                -Attributes $attributes `
+                -ScreenWidth $screenWidth `
+                -ScreenHeight $screenHeight `
+                -BoardWidth $width `
+                -X $x `
+                -Y $y `
+                -Character ([char] "#") `
+                -Attribute ([int16] 8)
         }
     }
 
     for ($y = 1; $y -lt $height; $y++) {
         foreach ($x in @(0, ($width - 1))) {
-            $bufferIndex = ($y * $width) + $x
-            $characters[$bufferIndex] = [char] "#"
-            $attributes[$bufferIndex] = [int16] 8
             $grid[$x, $y] = 1
+            Set-ArenaCellBuffer `
+                -Characters $characters `
+                -Attributes $attributes `
+                -ScreenWidth $screenWidth `
+                -ScreenHeight $screenHeight `
+                -BoardWidth $width `
+                -X $x `
+                -Y $y `
+                -Character ([char] "#") `
+                -Attribute ([int16] 8)
+        }
+    }
+
+    $unusedColumnStart = $width * $script:LogicalCellWidth
+    if ($unusedColumnStart -lt $screenWidth) {
+        for ($y = 1; $y -lt $height; $y++) {
+            for ($screenColumn = $unusedColumnStart; $screenColumn -lt $screenWidth; $screenColumn++) {
+                $bufferIndex = ($y * $screenWidth) + $screenColumn
+                $characters[$bufferIndex] = [char] "#"
+                $attributes[$bufferIndex] = [int16] 8
+            }
         }
     }
 
@@ -1073,21 +1212,32 @@ function New-Arena {
     Set-HeaderBuffer `
         -Characters $characters `
         -Attributes $attributes `
-        -Width $width `
+        -Width $screenWidth `
         -Segments $headerSegments
 
     foreach ($player in $players) {
         $grid[$player.X, $player.Y] = $player.CellValue
-        $bufferIndex = ($player.Y * $width) + $player.X
-        $characters[$bufferIndex] = [char] " "
-        $attributes[$bufferIndex] = $player.ColorAttribute
+        Set-ArenaCellBuffer `
+            -Characters $characters `
+            -Attributes $attributes `
+            -ScreenWidth $screenWidth `
+            -ScreenHeight $screenHeight `
+            -BoardWidth $width `
+            -X $player.X `
+            -Y $player.Y `
+            -Character ([char] " ") `
+            -Attribute $player.ColorAttribute
     }
 
     [pscustomobject] @{
-        Grid       = $grid
-        Characters = $characters
-        Attributes = $attributes
-        Players     = $players
+        Grid         = $grid
+        Characters   = $characters
+        Attributes   = $attributes
+        Players      = $players
+        ScreenWidth  = $screenWidth
+        ScreenHeight = $screenHeight
+        BoardWidth   = $width
+        BoardHeight  = $height
     }
 }
 
@@ -1139,7 +1289,7 @@ function Test-GridBlocked {
         [int] $Y
     )
 
-    if ($X -lt 0 -or $X -ge $Snapshot.Width -or $Y -lt 1 -or $Y -ge $Snapshot.Height) {
+    if ($X -lt 0 -or $X -ge $Arena.BoardWidth -or $Y -lt 1 -or $Y -ge $Arena.BoardHeight) {
         return $true
     }
 
@@ -1199,7 +1349,7 @@ function Get-ReachableSpace {
         return 0
     }
 
-    $visited = [Array]::CreateInstance([bool], $Snapshot.Width, $Snapshot.Height)
+    $visited = [Array]::CreateInstance([bool], $Arena.BoardWidth, $Arena.BoardHeight)
     $queueX = New-Object "int[]" $MaximumCells
     $queueY = New-Object "int[]" $MaximumCells
     $head = 0
@@ -1237,7 +1387,7 @@ function Get-ReachableSpace {
                 }
             }
 
-            if ($nextX -lt 0 -or $nextX -ge $Snapshot.Width -or $nextY -lt 1 -or $nextY -ge $Snapshot.Height) {
+            if ($nextX -lt 0 -or $nextX -ge $Arena.BoardWidth -or $nextY -lt 1 -or $nextY -ge $Arena.BoardHeight) {
                 continue
             }
 
@@ -1331,8 +1481,8 @@ function Get-AIDirectionChoice {
             -StartY $nextY `
             -MaximumCells $spaceLimit
 
-        $edgeDistanceX = [Math]::Min($nextX, ($Snapshot.Width - 1 - $nextX))
-        $edgeDistanceY = [Math]::Min(($nextY - 1), ($Snapshot.Height - 1 - $nextY))
+        $edgeDistanceX = [Math]::Min($nextX, ($Arena.BoardWidth - 1 - $nextX))
+        $edgeDistanceY = [Math]::Min(($nextY - 1), ($Arena.BoardHeight - 1 - $nextY))
         $edgeDistance = [Math]::Max(0, [Math]::Min($edgeDistanceX, $edgeDistanceY))
         $currentTargetDistance = Get-ManhattanDistance -X1 $Player.X -Y1 $Player.Y -X2 $target.X -Y2 $target.Y
         $nextTargetDistance = Get-ManhattanDistance -X1 $nextX -Y1 $nextY -X2 $target.X -Y2 $target.Y
@@ -1517,7 +1667,8 @@ function Start-Round {
     )
 
     $snapshot = Get-ConsoleSnapshot
-    if ($snapshot.Width -lt 40 -or $snapshot.Height -lt 12) {
+    $boardWidth = Get-LogicalBoardWidth -Snapshot $snapshot
+    if ($snapshot.Width -lt 40 -or $snapshot.Height -lt 12 -or $boardWidth -lt 20) {
         return [pscustomobject] @{
             Status  = "TooSmall"
             Message = "The terminal must be at least 40 columns by 12 rows."
@@ -1609,8 +1760,8 @@ function Start-Round {
             $nextY[$index] = $player.Y + $player.Dy
 
             $crashed[$index] = (
-                $nextX[$index] -lt 0 -or $nextX[$index] -ge $snapshot.Width -or
-                $nextY[$index] -lt 1 -or $nextY[$index] -ge $snapshot.Height -or
+                $nextX[$index] -lt 0 -or $nextX[$index] -ge $arena.BoardWidth -or
+                $nextY[$index] -lt 1 -or $nextY[$index] -ge $arena.BoardHeight -or
                 $arena.Grid[$nextX[$index], $nextY[$index]] -ne 0
             )
         }
@@ -1657,15 +1808,13 @@ function Start-Round {
             else {
                 $cellAttribute = $player.ColorAttribute
             }
-            $bufferIndex = ($player.Y * $snapshot.Width) + $player.X
-            $arena.Characters[$bufferIndex] = [char] " "
-            $arena.Attributes[$bufferIndex] = $cellAttribute
-            [Tron.NativeConsole]::WriteCell(
-                $snapshot.WindowLeft + $player.X,
-                $snapshot.WindowTop + $player.Y,
-                [char] " ",
-                $cellAttribute
-            )
+            Write-ArenaCell `
+                -Snapshot $snapshot `
+                -Arena $arena `
+                -X $player.X `
+                -Y $player.Y `
+                -Character ([char] " ") `
+                -Attribute $cellAttribute
         }
 
         if ($baseTickFrame) {
@@ -1974,7 +2123,7 @@ function Get-CampaignLevels {
             PlayerColorAttributes = $levelFourColors.TrailAttributes
             PlayerTurboColorAttributes = $levelFourColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "MCP" -LookAhead 13 -Jitter 6 -Aggression 10 -TurboChance 18 -TurboMinimumSpace 11 -SpaceWeight 5 -SpaceLimit 280 -TurnPenalty 15 -ForwardBias 10 -DecisionIntervalTicks 1 -EmergencyLookAhead 2 -EmergencyChance 100),
+                (New-AIProfile -PlayerNumber 2 -Name "MCP" -LookAhead 13 -Jitter 6 -Aggression 10 -TurboChance 18 -TurboMinimumSpace 13 -SpaceWeight 7 -SpaceLimit 320 -TurnPenalty 22 -ForwardBias 16 -DecisionIntervalTicks 1 -EmergencyLookAhead 2 -EmergencyChance 100),
                 (New-AIProfile -PlayerNumber 3 -Name "Guard" -LookAhead 12 -Jitter 6 -Aggression 5 -TurboChance 12 -TurboMinimumSpace 12 -SpaceWeight 7 -SpaceLimit 260 -TurnPenalty 22 -ForwardBias 18 -DecisionIntervalTicks 2 -EmergencyLookAhead 1 -EmergencyChance 95)
             )
         },
@@ -1988,7 +2137,7 @@ function Get-CampaignLevels {
             PlayerColorAttributes = $levelFiveColors.TrailAttributes
             PlayerTurboColorAttributes = $levelFiveColors.TurboTrailAttributes
             AiProfiles       = @(
-                (New-AIProfile -PlayerNumber 2 -Name "BOSS" -LookAhead 16 -Jitter 0 -Aggression 14 -TurboChance 24 -TurboMinimumSpace 14 -SpaceWeight 7 -SpaceLimit 360 -TurnPenalty 10 -ForwardBias 8 -DecisionIntervalTicks 1 -EmergencyLookAhead 3 -EmergencyChance 100)
+                (New-AIProfile -PlayerNumber 2 -Name "BOSS" -LookAhead 16 -Jitter 0 -Aggression 13 -TurboChance 24 -TurboMinimumSpace 16 -SpaceWeight 8 -SpaceLimit 420 -TurnPenalty 18 -ForwardBias 14 -DecisionIntervalTicks 1 -EmergencyLookAhead 3 -EmergencyChance 100)
             )
         }
     )
