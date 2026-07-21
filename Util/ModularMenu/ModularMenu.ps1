@@ -285,6 +285,7 @@ $script:MenuConfig = @{
                 @{ Label = 'SpaceFrack'; Color = 'Cyan'; Desc = ' WinForms UI Edition'; Action = { RunExternalScript -noLog -hidden -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/SpaceFrack/SpaceFrack.ps1" } }
 				@{ Label = 'DELVE'; Color = 'Gray'; Desc = ' A 1980 Rogue-like'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Delve/DELVE.ps1" } }
 				@{ Label = 'TRON'; Color = 'Blue'; Desc = ' Tron: Light Cycles - Campaign, PvE, PvEvE, PvP, or PvPvP'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/TRON/Tron.ps1" } }
+				@{ Label = 'Snake'; Color = 'Green'; Desc = ' Snake by PijiN, solo or versus with settings'; Action = { RunExternalScript -noLog -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/Snake/Snake.ps1" } }
 				@{ Label = 'NULLWAKE'; Color = 'DarkMagenta'; Desc = ' A 2D wave-based defense roguelike in WinForms'; Action = { RunExternalScript -noLog -hidden -ScriptURL "https://raw.githubusercontent.com/thePijiN/PijiN/refs/heads/main/NULLWAKE/NULLWAKE.ps1" } }
             )
         }
