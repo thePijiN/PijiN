@@ -8,6 +8,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
 $script:LogicalCellWidth = 2
+$script:DirectionQueueCapacity = 8
 $script:TurboDurationTicks = 12
 $script:TurboCooldownTicks = 80
 
@@ -764,6 +765,9 @@ function New-Player {
         Dy             = $Dy
         PendingDx      = $Dx
         PendingDy      = $Dy
+        QueuedDx       = $Dx
+        QueuedDy       = $Dy
+        DirectionQueue = (New-Object "System.Collections.Generic.Queue[int]")
         CellValue      = $CellValue
         ColorAttribute = $ColorAttribute
         TurboColorAttribute = $TurboColorAttribute
@@ -789,6 +793,68 @@ function Set-PendingDirection {
 
     $Player.PendingDx = $Dx
     $Player.PendingDy = $Dy
+}
+
+function Add-QueuedDirection {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Player,
+
+        [int] $Dx,
+        [int] $Dy
+    )
+
+    if (-not $Player.Active) {
+        return
+    }
+    if ($Player.DirectionQueue.Count -ge $script:DirectionQueueCapacity) {
+        return
+    }
+    if ($Dx -eq $Player.QueuedDx -and $Dy -eq $Player.QueuedDy) {
+        return
+    }
+    if (($Dx + $Player.QueuedDx) -eq 0 -and ($Dy + $Player.QueuedDy) -eq 0) {
+        return
+    }
+
+    $directionCode = -1
+    if ($Dx -eq 0 -and $Dy -eq -1) { $directionCode = 0 }
+    elseif ($Dx -eq 1 -and $Dy -eq 0) { $directionCode = 1 }
+    elseif ($Dx -eq 0 -and $Dy -eq 1) { $directionCode = 2 }
+    elseif ($Dx -eq -1 -and $Dy -eq 0) { $directionCode = 3 }
+    if ($directionCode -lt 0) {
+        return
+    }
+
+    $Player.DirectionQueue.Enqueue($directionCode)
+    $Player.QueuedDx = $Dx
+    $Player.QueuedDy = $Dy
+}
+
+function Apply-NextQueuedDirection {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Player
+    )
+
+    if (-not $Player.Active -or $Player.DirectionQueue.Count -eq 0) {
+        return
+    }
+
+    $directionCode = $Player.DirectionQueue.Dequeue()
+    switch ($directionCode) {
+        0 { $Player.Dx = 0; $Player.Dy = -1 }
+        1 { $Player.Dx = 1; $Player.Dy = 0 }
+        2 { $Player.Dx = 0; $Player.Dy = 1 }
+        3 { $Player.Dx = -1; $Player.Dy = 0 }
+    }
+
+    $Player.PendingDx = $Player.Dx
+    $Player.PendingDy = $Player.Dy
+    if ($Player.DirectionQueue.Count -eq 0) {
+        $Player.QueuedDx = $Player.Dx
+        $Player.QueuedDy = $Player.Dy
+    }
 }
 
 function Invoke-PlayerTurbo {
@@ -1073,20 +1139,20 @@ function Read-GameInput {
         $key = [Console]::ReadKey($true).Key
 
         switch ($key) {
-            "W"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Set-PendingDirection -Player $Players[0] -Dx 0 -Dy -1 } }
-            "A"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Set-PendingDirection -Player $Players[0] -Dx -1 -Dy 0 } }
-            "S"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Set-PendingDirection -Player $Players[0] -Dx 0 -Dy 1 } }
-            "D"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Set-PendingDirection -Player $Players[0] -Dx 1 -Dy 0 } }
+            "W"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Add-QueuedDirection -Player $Players[0] -Dx 0 -Dy -1 } }
+            "A"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Add-QueuedDirection -Player $Players[0] -Dx -1 -Dy 0 } }
+            "S"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Add-QueuedDirection -Player $Players[0] -Dx 0 -Dy 1 } }
+            "D"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Add-QueuedDirection -Player $Players[0] -Dx 1 -Dy 0 } }
             "F"          { if ((Test-HumanPlayer -PlayerNumber 1 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[0].Active) { Invoke-PlayerTurbo -Player $Players[0] -TurboEnabled $TurboEnabled } }
-            "UpArrow"    { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Set-PendingDirection -Player $Players[1] -Dx 0 -Dy -1 } }
-            "LeftArrow"  { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Set-PendingDirection -Player $Players[1] -Dx -1 -Dy 0 } }
-            "DownArrow"  { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Set-PendingDirection -Player $Players[1] -Dx 0 -Dy 1 } }
-            "RightArrow" { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Set-PendingDirection -Player $Players[1] -Dx 1 -Dy 0 } }
+            "UpArrow"    { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Add-QueuedDirection -Player $Players[1] -Dx 0 -Dy -1 } }
+            "LeftArrow"  { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Add-QueuedDirection -Player $Players[1] -Dx -1 -Dy 0 } }
+            "DownArrow"  { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Add-QueuedDirection -Player $Players[1] -Dx 0 -Dy 1 } }
+            "RightArrow" { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Add-QueuedDirection -Player $Players[1] -Dx 1 -Dy 0 } }
             "Enter"      { if ((Test-HumanPlayer -PlayerNumber 2 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players[1].Active) { Invoke-PlayerTurbo -Player $Players[1] -TurboEnabled $TurboEnabled } }
-            "I"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Set-PendingDirection -Player $Players[2] -Dx 0 -Dy -1 } }
-            "J"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Set-PendingDirection -Player $Players[2] -Dx -1 -Dy 0 } }
-            "K"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Set-PendingDirection -Player $Players[2] -Dx 0 -Dy 1 } }
-            "L"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Set-PendingDirection -Player $Players[2] -Dx 1 -Dy 0 } }
+            "I"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Add-QueuedDirection -Player $Players[2] -Dx 0 -Dy -1 } }
+            "J"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Add-QueuedDirection -Player $Players[2] -Dx -1 -Dy 0 } }
+            "K"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Add-QueuedDirection -Player $Players[2] -Dx 0 -Dy 1 } }
+            "L"          { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Add-QueuedDirection -Player $Players[2] -Dx 1 -Dy 0 } }
             "Spacebar"   { if ((Test-HumanPlayer -PlayerNumber 3 -HumanPlayerNumbers $HumanPlayerNumbers) -and $Players.Count -ge 3 -and $Players[2].Active) { Invoke-PlayerTurbo -Player $Players[2] -TurboEnabled $TurboEnabled } }
             "Escape"     { return $true }
         }
@@ -1754,8 +1820,13 @@ function Start-Round {
                 continue
             }
 
-            $player.Dx = $player.PendingDx
-            $player.Dy = $player.PendingDy
+            if (Test-HumanPlayer -PlayerNumber $player.Number -HumanPlayerNumbers $HumanPlayerNumbers) {
+                Apply-NextQueuedDirection -Player $player
+            }
+            else {
+                $player.Dx = $player.PendingDx
+                $player.Dy = $player.PendingDy
+            }
             $nextX[$index] = $player.X + $player.Dx
             $nextY[$index] = $player.Y + $player.Dy
 
@@ -2929,4 +3000,3 @@ function Start-Tron {
 if ($MyInvocation.InvocationName -ne ".") {
     Start-Tron
 }
-#

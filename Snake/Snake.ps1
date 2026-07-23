@@ -6,8 +6,10 @@ param(
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
 
-$script:SchemaVersion = 1
+$script:SchemaVersion = 2
 $script:ScorePerFood = 100
+$script:MaximumFoodCount = 12
+$script:DirectionQueueCapacity = 8
 $script:MinimumConsoleWidth = 50
 $script:MinimumConsoleHeight = 16
 $script:PersistenceWarning = ""
@@ -25,6 +27,7 @@ $script:PresetDefinitions = @(
         TickMilliseconds = 100
         Edges            = "Border"
         GrowthPerFood    = 3
+        FoodCount        = 1
         StartingLength   = 4
         PlayerCount      = 2
         CorpseObstacles  = $false
@@ -36,6 +39,7 @@ $script:PresetDefinitions = @(
         TickMilliseconds = 65
         Edges            = "Border"
         GrowthPerFood    = 2
+        FoodCount        = 1
         StartingLength   = 4
         PlayerCount      = 2
         CorpseObstacles  = $false
@@ -47,6 +51,7 @@ $script:PresetDefinitions = @(
         TickMilliseconds = 90
         Edges            = "Wrap"
         GrowthPerFood    = 3
+        FoodCount        = 1
         StartingLength   = 5
         PlayerCount      = 2
         CorpseObstacles  = $false
@@ -58,6 +63,7 @@ $script:PresetDefinitions = @(
         TickMilliseconds = 90
         Edges            = "Border"
         GrowthPerFood    = 2
+        FoodCount        = 1
         StartingLength   = 4
         PlayerCount      = 2
         CorpseObstacles  = $false
@@ -69,6 +75,7 @@ $script:PresetDefinitions = @(
         TickMilliseconds = 85
         Edges            = "Wrap"
         GrowthPerFood    = 3
+        FoodCount        = 1
         StartingLength   = 4
         PlayerCount      = 3
         CorpseObstacles  = $true
@@ -277,6 +284,7 @@ function New-DefaultSettings {
         TickMilliseconds = 100
         Edges            = "Border"
         GrowthPerFood    = 3
+        FoodCount        = 1
         StartingLength   = 4
         PlayerCount      = 2
         CorpseObstacles  = $false
@@ -354,6 +362,7 @@ function Import-SnakeData {
         $settings.RoundEndRule = Test-Choice -Value ([string] (Get-ObjectPropertyValue $source "RoundEndRule" $settings.RoundEndRule)) -Allowed @("OneLeft", "AllDead") -DefaultValue $settings.RoundEndRule
         $settings.TickMilliseconds = [Math]::Max(35, [Math]::Min(250, [int] (Get-ObjectPropertyValue $source "TickMilliseconds" $settings.TickMilliseconds)))
         $settings.GrowthPerFood = [Math]::Max(1, [Math]::Min(10, [int] (Get-ObjectPropertyValue $source "GrowthPerFood" $settings.GrowthPerFood)))
+        $settings.FoodCount = [Math]::Max(1, [Math]::Min($script:MaximumFoodCount, [int] (Get-ObjectPropertyValue $source "FoodCount" $settings.FoodCount)))
         $settings.StartingLength = [Math]::Max(3, [Math]::Min(10, [int] (Get-ObjectPropertyValue $source "StartingLength" $settings.StartingLength)))
         $settings.PlayerCount = [Math]::Max(2, [Math]::Min(3, [int] (Get-ObjectPropertyValue $source "PlayerCount" $settings.PlayerCount)))
         $settings.CorpseObstacles = [bool] (Get-ObjectPropertyValue $source "CorpseObstacles" $settings.CorpseObstacles)
@@ -445,6 +454,7 @@ function Test-SettingsMatchPreset {
         $Settings.TickMilliseconds -eq $Preset.TickMilliseconds -and
         $Settings.Edges -eq $Preset.Edges -and
         $Settings.GrowthPerFood -eq $Preset.GrowthPerFood -and
+        $Settings.FoodCount -eq $Preset.FoodCount -and
         $Settings.StartingLength -eq $Preset.StartingLength -and
         $Settings.PlayerCount -eq $Preset.PlayerCount -and
         $Settings.CorpseObstacles -eq $Preset.CorpseObstacles -and
@@ -476,7 +486,7 @@ function Set-SettingsFromPreset {
     )
 
     foreach ($property in @(
-        "Mode", "TickMilliseconds", "Edges", "GrowthPerFood",
+        "Mode", "TickMilliseconds", "Edges", "GrowthPerFood", "FoodCount",
         "StartingLength", "PlayerCount", "CorpseObstacles", "RoundEndRule"
     )) {
         $Settings.$property = $Preset.$property
@@ -492,7 +502,7 @@ function Get-RuleText {
 
     $edgeText = $(if ($Settings.Edges -eq "Border") { "Border" } else { "Wrap" })
     if ($Settings.Mode -eq "Solo") {
-        return "Solo {0} {1}ms G{2} L{3}" -f $edgeText, $Settings.TickMilliseconds, $Settings.GrowthPerFood, $Settings.StartingLength
+        return "Solo {0} {1}ms G{2} F{3} L{4}" -f $edgeText, $Settings.TickMilliseconds, $Settings.GrowthPerFood, $Settings.FoodCount, $Settings.StartingLength
     }
 
     $endText = $(if ($Settings.RoundEndRule -eq "OneLeft") { "OneLeft" } else { "AllDead" })
@@ -501,7 +511,7 @@ function Get-RuleText {
         $corpseText = " Corpses:{0}" -f $(if ($Settings.CorpseObstacles) { "On" } else { "Off" })
     }
 
-    return "Battle {0}P {1} {2}ms G{3} L{4}{5} End:{6}" -f $Settings.PlayerCount, $edgeText, $Settings.TickMilliseconds, $Settings.GrowthPerFood, $Settings.StartingLength, $corpseText, $endText
+    return "Battle {0}P {1} {2}ms G{3} F{4} L{5}{6} End:{7}" -f $Settings.PlayerCount, $edgeText, $Settings.TickMilliseconds, $Settings.GrowthPerFood, $Settings.FoodCount, $Settings.StartingLength, $corpseText, $endText
 }
 
 function Copy-RunRules {
@@ -515,6 +525,7 @@ function Copy-RunRules {
         TickMilliseconds = $Settings.TickMilliseconds
         Edges            = $Settings.Edges
         GrowthPerFood    = $Settings.GrowthPerFood
+        FoodCount        = $Settings.FoodCount
         StartingLength   = $Settings.StartingLength
         PlayerCount      = $Settings.PlayerCount
         CorpseObstacles  = $Settings.CorpseObstacles
@@ -991,14 +1002,15 @@ function Get-MainMenuOptions {
         [pscustomobject] @{ Id = "Speed"; Text = "[4] Speed: {0}ms ({1:N1} cells/sec)" -f $Settings.TickMilliseconds, $speed; Adjustable = $true; Shortcut = 4 },
         [pscustomobject] @{ Id = "Edges"; Text = "[5] Edges: {0}" -f $Settings.Edges; Adjustable = $true; Shortcut = 5 },
         [pscustomobject] @{ Id = "Growth"; Text = "[6] Growth per food: {0}" -f $Settings.GrowthPerFood; Adjustable = $true; Shortcut = 6 },
-        [pscustomobject] @{ Id = "Length"; Text = "[7] Starting length: {0}" -f $Settings.StartingLength; Adjustable = $true; Shortcut = 7 }
+        [pscustomobject] @{ Id = "Food"; Text = "[7] Food at once: {0}" -f $Settings.FoodCount; Adjustable = $true; Shortcut = 7 },
+        [pscustomobject] @{ Id = "Length"; Text = "[8] Starting length: {0}" -f $Settings.StartingLength; Adjustable = $true; Shortcut = 8 }
     )
 
     if ($Settings.Mode -eq "Battle") {
-        $options += [pscustomobject] @{ Id = "Players"; Text = "[8] Players: {0}" -f $Settings.PlayerCount; Adjustable = $true; Shortcut = 8 }
+        $options += [pscustomobject] @{ Id = "Players"; Text = "[9] Players: {0}" -f $Settings.PlayerCount; Adjustable = $true; Shortcut = 9 }
         if ($Settings.PlayerCount -eq 3) {
             $corpseText = $(if ($Settings.CorpseObstacles) { "Dimmed obstacles" } else { "Disappear" })
-            $options += [pscustomobject] @{ Id = "Corpses"; Text = "[9] Eliminated bodies: {0}" -f $corpseText; Adjustable = $true; Shortcut = 9 }
+            $options += [pscustomobject] @{ Id = "Corpses"; Text = "[B] Eliminated bodies: {0}" -f $corpseText; Adjustable = $true; Shortcut = 0 }
         }
         $endText = $(if ($Settings.RoundEndRule -eq "OneLeft") { "When one snake remains" } else { "After the last snake dies" })
         $options += [pscustomobject] @{ Id = "RoundEnd"; Text = "[R] Round ends: {0}" -f $endText; Adjustable = $true; Shortcut = 0 }
@@ -1055,6 +1067,11 @@ function Step-MainMenuSetting {
             $Settings.GrowthPerFood += $Delta
             if ($Settings.GrowthPerFood -lt 1) { $Settings.GrowthPerFood = 10 }
             if ($Settings.GrowthPerFood -gt 10) { $Settings.GrowthPerFood = 1 }
+        }
+        "Food" {
+            $Settings.FoodCount += $Delta
+            if ($Settings.FoodCount -lt 1) { $Settings.FoodCount = $script:MaximumFoodCount }
+            if ($Settings.FoodCount -gt $script:MaximumFoodCount) { $Settings.FoodCount = 1 }
         }
         "Length" {
             $Settings.StartingLength += $Delta
@@ -1248,6 +1265,14 @@ function Show-MainMenu {
                     Export-SnakeData -Data $Data -Path $DataPath
                 }
             }
+            "B" {
+                $corpseOption = @($options | Where-Object { $_.Id -eq "Corpses" })
+                if ($corpseOption.Count -gt 0) {
+                    $selected = [Array]::IndexOf($options, $corpseOption[0])
+                    Step-MainMenuSetting -Settings $Data.Settings -Id "Corpses" -Delta 1
+                    Export-SnakeData -Data $Data -Path $DataPath
+                }
+            }
             "X" {
                 $Data.Settings = New-DefaultSettings
                 Export-SnakeData -Data $Data -Path $DataPath
@@ -1300,8 +1325,9 @@ function New-SnakePlayer {
         Y               = $HeadY
         Dx              = $Dx
         Dy              = $Dy
-        PendingDx       = $Dx
-        PendingDy       = $Dy
+        QueuedDx        = $Dx
+        QueuedDy        = $Dy
+        DirectionQueue  = (New-Object "System.Collections.Generic.Queue[int]")
         HeadIndex       = (($HeadY * $BoardWidth) + $HeadX)
         Body            = $body
         Active          = $true
@@ -1315,11 +1341,17 @@ function New-SnakePlayer {
     }
 }
 
-function New-FoodIndex {
+function Add-MissingFood {
     param(
         [Parameter(Mandatory = $true)]
-        $Game
+        $Game,
+        [switch] $MarkDirty
     )
+
+    $needed = $Game.Settings.FoodCount - $Game.FoodIndexes.Count
+    if ($needed -le 0) {
+        return
+    }
 
     $freeCells = New-Object "System.Collections.Generic.List[int]"
     $minimumX = $(if ($Game.Settings.Edges -eq "Border") { 1 } else { 0 })
@@ -1331,17 +1363,22 @@ function New-FoodIndex {
         $rowStart = $y * $Game.BoardWidth
         for ($x = $minimumX; $x -le $maximumX; $x++) {
             $cellIndex = $rowStart + $x
-            if ($Game.Occupancy[$cellIndex] -eq 0) {
+            if ($Game.Occupancy[$cellIndex] -eq 0 -and -not $Game.FoodIndexes.Contains($cellIndex)) {
                 $freeCells.Add($cellIndex)
             }
         }
     }
 
-    if ($freeCells.Count -eq 0) {
-        return -1
+    while ($needed -gt 0 -and $freeCells.Count -gt 0) {
+        $choiceIndex = $script:Random.Next($freeCells.Count)
+        $cellIndex = $freeCells[$choiceIndex]
+        $freeCells.RemoveAt($choiceIndex)
+        [void] $Game.FoodIndexes.Add($cellIndex)
+        if ($MarkDirty) {
+            Add-DirtyCell -Game $Game -CellIndex $cellIndex
+        }
+        $needed--
     }
-
-    return $freeCells[$script:Random.Next($freeCells.Count)]
 }
 
 function New-GameState {
@@ -1424,7 +1461,8 @@ function New-GameState {
         BoardHeight      = $boardHeight
         Occupancy        = $occupancy
         Snakes           = @($snakes)
-        FoodIndex        = -1
+        FoodIndexes      = (New-Object "System.Collections.Generic.HashSet[int]")
+        ConsumedFood     = (New-Object "System.Collections.Generic.HashSet[int]")
         ScreenCharacters = $screenCharacters
         ScreenAttributes = $screenAttributes
         HeaderCharacters = (New-Object "char[]" $Snapshot.Width)
@@ -1442,7 +1480,7 @@ function New-GameState {
         LastStanding     = 0
     }
 
-    $game.FoodIndex = New-FoodIndex -Game $game
+    Add-MissingFood -Game $game
     return $game
 }
 
@@ -1486,7 +1524,7 @@ function Set-LogicalCell {
             $second = [char] "|"
         }
     }
-    elseif ($CellIndex -eq $Game.FoodIndex) {
+    elseif ($Game.FoodIndexes.Contains($CellIndex)) {
         $foodColor = Get-ColorValue -Name $Game.Settings.Colors.Food
         $attribute = Get-ConsoleAttribute -Foreground $foodColor
         $first = [char] "<"
@@ -1603,7 +1641,7 @@ function Update-GameHeader {
     }
     elseif ($Game.Settings.Mode -eq "Solo") {
         $snake = $Game.Snakes[0]
-        $text = " SCORE {0:D7} | FOOD {1:D4} | LENGTH {2:D4} | {3}ms | P pause | ESC end run " -f $snake.Score, $snake.FoodEaten, $snake.Body.Count, $Game.Settings.TickMilliseconds
+        $text = " SCORE {0:D7} | EATEN {1:D4} | LEN {2:D4} | FOOD {3} | {4}ms | P pause | ESC end run " -f $snake.Score, $snake.FoodEaten, $snake.Body.Count, $Game.FoodIndexes.Count, $Game.Settings.TickMilliseconds
         [void] (Add-HeaderText -Game $Game -Column 0 -Text $text -Attribute (Get-ConsoleAttribute -Foreground (Get-ColorValue $snake.ColorName)))
     }
     else {
@@ -1684,12 +1722,52 @@ function Set-SnakeDirection {
     if (-not $Snake.Active) {
         return
     }
-    if (($Dx + $Snake.Dx) -eq 0 -and ($Dy + $Snake.Dy) -eq 0) {
+    if ($Snake.DirectionQueue.Count -ge $script:DirectionQueueCapacity) {
+        return
+    }
+    if ($Dx -eq $Snake.QueuedDx -and $Dy -eq $Snake.QueuedDy) {
+        return
+    }
+    if (($Dx + $Snake.QueuedDx) -eq 0 -and ($Dy + $Snake.QueuedDy) -eq 0) {
         return
     }
 
-    $Snake.PendingDx = $Dx
-    $Snake.PendingDy = $Dy
+    $directionCode = -1
+    if ($Dx -eq 0 -and $Dy -eq -1) { $directionCode = 0 }
+    elseif ($Dx -eq 1 -and $Dy -eq 0) { $directionCode = 1 }
+    elseif ($Dx -eq 0 -and $Dy -eq 1) { $directionCode = 2 }
+    elseif ($Dx -eq -1 -and $Dy -eq 0) { $directionCode = 3 }
+    if ($directionCode -lt 0) {
+        return
+    }
+
+    $Snake.DirectionQueue.Enqueue($directionCode)
+    $Snake.QueuedDx = $Dx
+    $Snake.QueuedDy = $Dy
+}
+
+function Apply-NextSnakeDirection {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Snake
+    )
+
+    if (-not $Snake.Active -or $Snake.DirectionQueue.Count -eq 0) {
+        return
+    }
+
+    $directionCode = $Snake.DirectionQueue.Dequeue()
+    switch ($directionCode) {
+        0 { $Snake.Dx = 0; $Snake.Dy = -1 }
+        1 { $Snake.Dx = 1; $Snake.Dy = 0 }
+        2 { $Snake.Dx = 0; $Snake.Dy = 1 }
+        3 { $Snake.Dx = -1; $Snake.Dy = 0 }
+    }
+
+    if ($Snake.DirectionQueue.Count -eq 0) {
+        $Snake.QueuedDx = $Snake.Dx
+        $Snake.QueuedDy = $Snake.Dy
+    }
 }
 
 function Read-GameInput {
@@ -1756,6 +1834,7 @@ function Invoke-GameTick {
 
     $snakeCount = $Game.Snakes.Count
     $headerDirty = $false
+    $Game.ConsumedFood.Clear()
     for ($index = 0; $index -lt $snakeCount; $index++) {
         $Game.NextX[$index] = 0
         $Game.NextY[$index] = 0
@@ -1772,8 +1851,7 @@ function Invoke-GameTick {
             continue
         }
 
-        $snake.Dx = $snake.PendingDx
-        $snake.Dy = $snake.PendingDy
+        Apply-NextSnakeDirection -Snake $snake
         $nextX = $snake.X + $snake.Dx
         $nextY = $snake.Y + $snake.Dy
 
@@ -1795,7 +1873,7 @@ function Invoke-GameTick {
         if (-not $Game.Crashed[$index]) {
             $nextCellIndex = ($nextY * $Game.BoardWidth) + $nextX
             $Game.NextIndex[$index] = $nextCellIndex
-            $Game.EatsFood[$index] = ($Game.FoodIndex -ge 0 -and $nextCellIndex -eq $Game.FoodIndex)
+            $Game.EatsFood[$index] = $Game.FoodIndexes.Contains($nextCellIndex)
         }
 
         if ($snake.Body.Count -gt 0) {
@@ -1887,7 +1965,6 @@ function Invoke-GameTick {
         }
     }
 
-    $foodConsumed = $false
     for ($index = 0; $index -lt $snakeCount; $index++) {
         $snake = $Game.Snakes[$index]
         if (-not $snake.Active -or $Game.Crashed[$index]) {
@@ -1906,7 +1983,7 @@ function Invoke-GameTick {
             $snake.Score += $script:ScorePerFood
             $snake.FoodEaten++
             $snake.GrowthPending += $Game.Settings.GrowthPerFood
-            $foodConsumed = $true
+            [void] $Game.ConsumedFood.Add($snake.HeadIndex)
             $headerDirty = $true
         }
         if (-not $Game.TailVacates[$index] -and $snake.GrowthPending -gt 0) {
@@ -1919,16 +1996,11 @@ function Invoke-GameTick {
         }
     }
 
-    if ($foodConsumed) {
-        $Game.FoodIndex = -1
+    foreach ($foodIndex in $Game.ConsumedFood) {
+        [void] $Game.FoodIndexes.Remove($foodIndex)
+        Add-DirtyCell -Game $Game -CellIndex $foodIndex
     }
-    if ($Game.FoodIndex -lt 0) {
-        $newFoodIndex = New-FoodIndex -Game $Game
-        if ($newFoodIndex -ge 0) {
-            $Game.FoodIndex = $newFoodIndex
-            Add-DirtyCell -Game $Game -CellIndex $newFoodIndex
-        }
-    }
+    Add-MissingFood -Game $Game -MarkDirty
 
     $Game.TickCount++
     if ($NoRender) {
@@ -2301,7 +2373,7 @@ function Assert-SnakeTest {
 function Invoke-SnakeSelfTest {
     $settings = New-DefaultSettings
     Assert-SnakeTest -Condition ($settings.Preset -eq "Classic") -Message "Default preset should be Classic."
-    Assert-SnakeTest -Condition ((Get-RuleText $settings) -eq "Solo Border 100ms G3 L4") -Message "Classic rule notation changed unexpectedly."
+    Assert-SnakeTest -Condition ((Get-RuleText $settings) -eq "Solo Border 100ms G3 F1 L4") -Message "Classic rule notation changed unexpectedly."
 
     $settings.GrowthPerFood = 4
     Update-DetectedPreset -Settings $settings
@@ -2325,48 +2397,102 @@ function Invoke-SnakeSelfTest {
     Assert-SnakeTest -Condition ($game.Status -eq "Ready") -Message "A normal terminal should produce a playable game state."
     Assert-SnakeTest -Condition ($game.BoardWidth -eq 60 -and $game.BoardHeight -eq 29) -Message "Arena should fit the terminal at two columns per logical cell."
     Assert-SnakeTest -Condition ($game.Snakes.Count -eq 3) -Message "Last Stand should create three snakes."
-    Assert-SnakeTest -Condition ($game.FoodIndex -ge 0 -and $game.Occupancy[$game.FoodIndex] -eq 0) -Message "Food should spawn on a free cell."
+    Assert-SnakeTest -Condition ($game.FoodIndexes.Count -eq 1) -Message "Classic rules should spawn one food."
+    foreach ($foodIndex in $game.FoodIndexes) {
+        Assert-SnakeTest -Condition ($game.Occupancy[$foodIndex] -eq 0) -Message "Food should spawn on a free cell."
+    }
     Assert-SnakeTest -Condition ((Get-DimColorName "Green") -eq "DarkGreen") -Message "Bright corpse colors should dim predictably."
+
+    $multiFoodSettings = New-DefaultSettings
+    $multiFoodSettings.FoodCount = $script:MaximumFoodCount
+    Update-DetectedPreset -Settings $multiFoodSettings
+    $multiFoodGame = New-GameState -Snapshot $fakeSnapshot -Settings $multiFoodSettings
+    Assert-SnakeTest -Condition ($multiFoodGame.FoodIndexes.Count -eq $script:MaximumFoodCount) -Message "The configured number of food cells should spawn when space permits."
 
     $soloSettings = New-DefaultSettings
     $soloGame = New-GameState -Snapshot $fakeSnapshot -Settings $soloSettings
     $soloSnake = $soloGame.Snakes[0]
-    $soloGame.FoodIndex = ($soloSnake.Y * $soloGame.BoardWidth) + ($soloSnake.X + 1)
+    $soloGame.FoodIndexes.Clear()
+    [void] $soloGame.FoodIndexes.Add(($soloSnake.Y * $soloGame.BoardWidth) + ($soloSnake.X + 1))
     $oldLength = $soloSnake.Body.Count
     $tickResult = Invoke-GameTick -Game $soloGame -NoRender
     Assert-SnakeTest -Condition ($tickResult -eq "Continue") -Message "A safe Solo move should continue."
     Assert-SnakeTest -Condition ($soloSnake.Score -eq $script:ScorePerFood -and $soloSnake.Body.Count -eq ($oldLength + 1)) -Message "Eating should score and grow immediately."
     Assert-SnakeTest -Condition ($soloSnake.GrowthPending -eq ($soloSettings.GrowthPerFood - 1)) -Message "Growth should continue for the configured number of cells."
+    Assert-SnakeTest -Condition ($soloGame.FoodIndexes.Count -eq $soloSettings.FoodCount) -Message "Consumed food should be replenished to the configured count."
+
+    $inputSettings = New-DefaultSettings
+    $inputGame = New-GameState -Snapshot $fakeSnapshot -Settings $inputSettings
+    $inputSnake = $inputGame.Snakes[0]
+    Set-SnakeDirection -Snake $inputSnake -Dx 0 -Dy -1
+    Set-SnakeDirection -Snake $inputSnake -Dx -1 -Dy 0
+    Set-SnakeDirection -Snake $inputSnake -Dx -1 -Dy 0
+    Assert-SnakeTest -Condition ($inputSnake.DirectionQueue.Count -eq 2) -Message "Rapid valid turns should queue in order while repeats are ignored."
+    Apply-NextSnakeDirection -Snake $inputSnake
+    Assert-SnakeTest -Condition ($inputSnake.Dx -eq 0 -and $inputSnake.Dy -eq -1 -and $inputSnake.DirectionQueue.Count -eq 1) -Message "The first queued turn should apply on the first tick."
+    Apply-NextSnakeDirection -Snake $inputSnake
+    Assert-SnakeTest -Condition ($inputSnake.Dx -eq -1 -and $inputSnake.Dy -eq 0 -and $inputSnake.DirectionQueue.Count -eq 0) -Message "The second queued turn should apply on the following tick."
+
+    $simultaneousInputGame = New-GameState -Snapshot $fakeSnapshot -Settings $settings
+    Set-SnakeDirection -Snake $simultaneousInputGame.Snakes[0] -Dx 0 -Dy -1
+    Set-SnakeDirection -Snake $simultaneousInputGame.Snakes[1] -Dx 0 -Dy 1
+    Set-SnakeDirection -Snake $simultaneousInputGame.Snakes[2] -Dx 1 -Dy 0
+    [void] (Invoke-GameTick -Game $simultaneousInputGame -NoRender)
+    Assert-SnakeTest -Condition ($simultaneousInputGame.Snakes[0].Dx -eq 0 -and $simultaneousInputGame.Snakes[0].Dy -eq -1) -Message "P1 should consume its queued turn on the shared tick."
+    Assert-SnakeTest -Condition ($simultaneousInputGame.Snakes[1].Dx -eq 0 -and $simultaneousInputGame.Snakes[1].Dy -eq 1) -Message "P2 should consume its queued turn on the shared tick."
+    Assert-SnakeTest -Condition ($simultaneousInputGame.Snakes[2].Dx -eq 1 -and $simultaneousInputGame.Snakes[2].Dy -eq 0) -Message "P3 should consume its queued turn on the shared tick."
+    Assert-SnakeTest -Condition (@($simultaneousInputGame.Snakes | Where-Object { $_.Active }).Count -eq 3) -Message "All three independently queued turns should produce simultaneous safe moves."
 
     $battleSettings = New-DefaultSettings
     $battlePreset = @($script:PresetDefinitions | Where-Object { $_.Name -eq "Battle" })[0]
     Set-SettingsFromPreset -Settings $battleSettings -Preset $battlePreset
+    $multiEatSettings = New-DefaultSettings
+    Set-SettingsFromPreset -Settings $multiEatSettings -Preset $battlePreset
+    $multiEatSettings.FoodCount = 2
+    Update-DetectedPreset -Settings $multiEatSettings
+    $multiEatGame = New-GameState -Snapshot $fakeSnapshot -Settings $multiEatSettings
+    $multiEatGame.FoodIndexes.Clear()
+    foreach ($snake in $multiEatGame.Snakes) {
+        [void] $multiEatGame.FoodIndexes.Add(($snake.Y * $multiEatGame.BoardWidth) + $snake.X + $snake.Dx)
+    }
+    [void] (Invoke-GameTick -Game $multiEatGame -NoRender)
+    Assert-SnakeTest -Condition ($multiEatGame.Snakes[0].Score -eq $script:ScorePerFood -and $multiEatGame.Snakes[1].Score -eq $script:ScorePerFood) -Message "Different snakes should be able to consume different food cells on the same tick."
+    Assert-SnakeTest -Condition ($multiEatGame.FoodIndexes.Count -eq 2) -Message "Simultaneously consumed food should replenish to the configured count."
+
     $battleSettings.RoundEndRule = "AllDead"
     Update-DetectedPreset -Settings $battleSettings
     $battleGame = New-GameState -Snapshot $fakeSnapshot -Settings $battleSettings
-    $battleGame.FoodIndex = -1
-    $battleGame.Snakes[0].PendingDx = -$battleGame.Snakes[0].Dx
-    $battleGame.Snakes[0].PendingDy = -$battleGame.Snakes[0].Dy
+    $battleGame.FoodIndexes.Clear()
+    $battleGame.Snakes[0].Dx = -$battleGame.Snakes[0].Dx
+    $battleGame.Snakes[0].Dy = -$battleGame.Snakes[0].Dy
+    $battleGame.Snakes[0].QueuedDx = $battleGame.Snakes[0].Dx
+    $battleGame.Snakes[0].QueuedDy = $battleGame.Snakes[0].Dy
     $tickResult = Invoke-GameTick -Game $battleGame -NoRender
     Assert-SnakeTest -Condition ($tickResult -eq "Continue" -and $battleGame.LastStanding -eq 2) -Message "AllDead should continue after one Battle snake remains."
-    $battleGame.Snakes[1].PendingDx = -$battleGame.Snakes[1].Dx
-    $battleGame.Snakes[1].PendingDy = -$battleGame.Snakes[1].Dy
+    $battleGame.Snakes[1].Dx = -$battleGame.Snakes[1].Dx
+    $battleGame.Snakes[1].Dy = -$battleGame.Snakes[1].Dy
+    $battleGame.Snakes[1].QueuedDx = $battleGame.Snakes[1].Dx
+    $battleGame.Snakes[1].QueuedDy = $battleGame.Snakes[1].Dy
     $tickResult = Invoke-GameTick -Game $battleGame -NoRender
     Assert-SnakeTest -Condition ($tickResult -eq "Winner" -and $battleGame.LastStanding -eq 2) -Message "AllDead should retain the last-standing winner after that snake dies."
 
     $oneLeftSettings = New-DefaultSettings
     Set-SettingsFromPreset -Settings $oneLeftSettings -Preset $battlePreset
     $oneLeftGame = New-GameState -Snapshot $fakeSnapshot -Settings $oneLeftSettings
-    $oneLeftGame.FoodIndex = -1
-    $oneLeftGame.Snakes[0].PendingDx = -$oneLeftGame.Snakes[0].Dx
-    $oneLeftGame.Snakes[0].PendingDy = -$oneLeftGame.Snakes[0].Dy
+    $oneLeftGame.FoodIndexes.Clear()
+    $oneLeftGame.Snakes[0].Dx = -$oneLeftGame.Snakes[0].Dx
+    $oneLeftGame.Snakes[0].Dy = -$oneLeftGame.Snakes[0].Dy
+    $oneLeftGame.Snakes[0].QueuedDx = $oneLeftGame.Snakes[0].Dx
+    $oneLeftGame.Snakes[0].QueuedDy = $oneLeftGame.Snakes[0].Dy
     $tickResult = Invoke-GameTick -Game $oneLeftGame -NoRender
     Assert-SnakeTest -Condition ($tickResult -eq "Winner" -and $oneLeftGame.LastStanding -eq 2) -Message "OneLeft should stop as soon as one Battle snake remains."
 
     $corpseGame = New-GameState -Snapshot $fakeSnapshot -Settings $settings
-    $corpseGame.FoodIndex = -1
-    $corpseGame.Snakes[0].PendingDx = -$corpseGame.Snakes[0].Dx
-    $corpseGame.Snakes[0].PendingDy = -$corpseGame.Snakes[0].Dy
+    $corpseGame.FoodIndexes.Clear()
+    $corpseGame.Snakes[0].Dx = -$corpseGame.Snakes[0].Dx
+    $corpseGame.Snakes[0].Dy = -$corpseGame.Snakes[0].Dy
+    $corpseGame.Snakes[0].QueuedDx = $corpseGame.Snakes[0].Dx
+    $corpseGame.Snakes[0].QueuedDy = $corpseGame.Snakes[0].Dy
     [void] (Invoke-GameTick -Game $corpseGame -NoRender)
     Assert-SnakeTest -Condition (-not $corpseGame.Snakes[0].Active -and $corpseGame.Snakes[0].CorpseDim) -Message "Enabled three-player corpses should dim on elimination."
     Assert-SnakeTest -Condition ($corpseGame.Snakes[0].Body.Count -gt 0) -Message "Dimmed corpses should remain in the occupancy grid."
@@ -2376,9 +2502,11 @@ function Invoke-SnakeSelfTest {
     $disappearingSettings.CorpseObstacles = $false
     Update-DetectedPreset -Settings $disappearingSettings
     $disappearingGame = New-GameState -Snapshot $fakeSnapshot -Settings $disappearingSettings
-    $disappearingGame.FoodIndex = -1
-    $disappearingGame.Snakes[0].PendingDx = -$disappearingGame.Snakes[0].Dx
-    $disappearingGame.Snakes[0].PendingDy = -$disappearingGame.Snakes[0].Dy
+    $disappearingGame.FoodIndexes.Clear()
+    $disappearingGame.Snakes[0].Dx = -$disappearingGame.Snakes[0].Dx
+    $disappearingGame.Snakes[0].Dy = -$disappearingGame.Snakes[0].Dy
+    $disappearingGame.Snakes[0].QueuedDx = $disappearingGame.Snakes[0].Dx
+    $disappearingGame.Snakes[0].QueuedDy = $disappearingGame.Snakes[0].Dy
     [void] (Invoke-GameTick -Game $disappearingGame -NoRender)
     Assert-SnakeTest -Condition ($disappearingGame.Snakes[0].Body.Count -eq 0 -and -not $disappearingGame.Snakes[0].CorpseDim) -Message "Disabled three-player corpses should disappear."
 
